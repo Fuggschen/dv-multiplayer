@@ -17,6 +17,7 @@ using System.Reflection;
 using UnityChan;
 using UnityEngine;
 using UnityModManagerNet;
+using MultiplayerVC.Voice;
 
 namespace Multiplayer;
 
@@ -116,6 +117,9 @@ public static class Multiplayer
             Log("Loading API Provider...");
             _apiProvider = new APIProvider();
             MultiplayerAPI.RegisterAPI(_apiProvider);
+
+            Log("Loading Voice...");
+            VoiceEntrypoint.Initialize();
         }
         catch (Exception ex)
         {

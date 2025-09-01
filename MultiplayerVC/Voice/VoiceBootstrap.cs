@@ -37,12 +37,67 @@ namespace MultiplayerVC.Voice
         }
     }
 
-    // Simple runtime auto-integration with the Multiplayer API.
-    // Initializes once MPAPI reports a server or client has started, or immediately if already active.
+    // Centralized runtime integration with the Multiplayer API.
+    internal static class VoiceRuntime
+    {
+        private static bool s_subscribed;
+        private static bool s_initialized;
+
+        // Ensures we subscribe to MPAPI events once and initialize immediately if already active.
+        public static void EnsureSubscribed()
+        {
+            if (s_subscribed) return;
+
+            MPAPI.MultiplayerAPI.ServerStarted += OnServerStarted;
+            MPAPI.MultiplayerAPI.ClientStarted += OnClientStarted;
+            s_subscribed = true;
+            Debug.Log("[Info] VoiceRuntime: subscribed to MPAPI events");
+            // If already connected before we subscribed, initialize immediately.
+            if (!s_initialized && (MPAPI.MultiplayerAPI.Server != null || MPAPI.MultiplayerAPI.Client != null))
+            {
+                InitializeRuntime();
+            }
+        }
+
+        public static void Unsubscribe()
+        {
+            if (!s_subscribed) return;
+            MPAPI.MultiplayerAPI.ServerStarted -= OnServerStarted;
+            MPAPI.MultiplayerAPI.ClientStarted -= OnClientStarted;
+            s_subscribed = false;
+        }
+
+        private static void OnServerStarted(IServer _)
+        {
+            if (!s_initialized) InitializeRuntime();
+        }
+
+        private static void OnClientStarted(IClient _)
+        {
+            if (!s_initialized) InitializeRuntime();
+        }
+
+        private static void InitializeRuntime()
+        {
+            s_initialized = true;
+            Debug.Log("[VC] VoiceRuntime: initializing voice via MPAPI");
+
+            var root = new GameObject("[VC] Runtime");
+            Object.DontDestroyOnLoad(root);
+
+            var bootstrap = root.AddComponent<VoiceBootstrap>();
+
+            // No proximity provider; broadcast to all clients and let Unity handle spatialization.
+            IMuteProvider mute = new LocalMuteProvider();
+
+            var bridge = new MpApiVoiceBridge();
+            bootstrap.Initialize(bridge, null, mute);
+        }
+    }
+    // Auto-initialize VoiceRuntime after scene load if not already initialized by the host mod.
     internal sealed class VoiceAutoInitializer : MonoBehaviour
     {
         private static bool s_spawned;
-        private static bool s_initialized;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -57,47 +112,22 @@ namespace MultiplayerVC.Voice
 
         private void OnEnable()
         {
-            MPAPI.MultiplayerAPI.ServerStarted += OnServerStarted;
-            MPAPI.MultiplayerAPI.ClientStarted += OnClientStarted;
-
-            // If already connected before we subscribed, initialize immediately.
-            if (!s_initialized && (MPAPI.MultiplayerAPI.Server != null || MPAPI.MultiplayerAPI.Client != null))
-            {
-                InitializeRuntime();
-            }
+            VoiceRuntime.EnsureSubscribed();
         }
 
         private void OnDisable()
         {
-            MPAPI.MultiplayerAPI.ServerStarted -= OnServerStarted;
-            MPAPI.MultiplayerAPI.ClientStarted -= OnClientStarted;
+            VoiceRuntime.Unsubscribe();
         }
+    }
 
-        private void OnServerStarted(IServer _)
+    // Public entrypoint for explicit initialization from the host mod.
+    public static class VoiceEntrypoint
+    {
+        // Call this from Multiplayer.cs after registering the MPAPI provider.
+        public static void Initialize()
         {
-            if (!s_initialized) InitializeRuntime();
-        }
-
-        private void OnClientStarted(IClient _)
-        {
-            if (!s_initialized) InitializeRuntime();
-        }
-
-        private void InitializeRuntime()
-        {
-            s_initialized = true;
-            Debug.Log("[VC] AutoInitializer: initializing voice via MPAPI");
-
-            var root = new GameObject("[VC] Runtime");
-            Object.DontDestroyOnLoad(root);
-
-            var bootstrap = root.AddComponent<VoiceBootstrap>();
-
-            // No proximity provider; broadcast to all clients and let Unity handle spatialization.
-            IMuteProvider mute = new LocalMuteProvider();
-
-            var bridge = new MpApiVoiceBridge();
-            bootstrap.Initialize(bridge, null, mute);
+            VoiceRuntime.EnsureSubscribed();
         }
     }
 }
