@@ -65,6 +65,9 @@
         <Reference Include="MultiplayerEditor">
             <HintPath>../build/MultiplayerEditor.dll</HintPath>
         </Reference>
+        <Reference Include="MultiplayerVC">
+            <HintPath>../build/MultiplayerVC.dll</HintPath>
+        </Reference>
         <Reference Include="Microsoft.CSharp" />
         <Reference Include="net.smkd.vector3d" />
         <Reference Include="Newtonsoft.Json" />

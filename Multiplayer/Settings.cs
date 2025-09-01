@@ -16,6 +16,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public const byte MAX_USERNAME_LENGTH = 24;
 
     public static Action<Settings> OnSettingsUpdated;
+    public static Action<Settings> OnVoiceSettingsUpdated;
 
     public int SettingsVer = CURRENT_VERSION;
 
@@ -32,6 +33,23 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     [Header("Misc.")]
     [Draw("Chat Key Bind", Tooltip ="Key to show chat window.")]
     public KeyCode ChatKey = KeyCode.Return;
+
+    [Space(10)]
+    [Header("Voice Chat")]
+    [Draw("Enable Voice Chat", Tooltip = "Enable in-game voice chat (Opus over Steam transport).")]
+    public bool VoiceEnabled = false;
+    [Draw("Push-To-Talk Key", Tooltip = "Key to transmit voice.", VisibleOn = "VoiceEnabled|true")]
+    public KeyCode VoicePTTKey = KeyCode.V;
+    [Draw("Open Mic", Tooltip = "Transmit automatically when above threshold.", VisibleOn = "VoiceEnabled|true")]
+    public bool VoiceOpenMic = false;
+    [Draw("Input Gain", Tooltip = "Microphone gain multiplier (1.0 = unity).", VisibleOn = "VoiceEnabled|true")]
+    public float VoiceInputGain = 1.0f;
+    [Draw("VAD Threshold (dB)", Tooltip = "Voice activation threshold; lower is more sensitive.", VisibleOn = "VoiceEnabled|true")]
+    public int VoiceVadThresholdDb = -45;
+    [Draw("Voice Volume", Tooltip = "Playback volume for other players.", VisibleOn = "VoiceEnabled|true")]
+    public float VoiceVolume = 1.0f;
+    [Draw("Microphone Device", Tooltip = "Input device used for voice chat.", VisibleOn = "VoiceEnabled|true")]
+    public string VoiceDeviceName = ""; // empty = system default
 
     [Space(10)]
     [Header("Server")]
@@ -62,7 +80,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public int LastRemotePort = 7777;
     [Draw("Last Remote Password", Tooltip = "The password for the last server connected to by IP.")]
     public string LastRemotePassword = "";
-    
+
     [Space(10)]
     [Header("Preferences")]
     [Draw("Show Name Tags", Tooltip = "Whether to show player names above their heads.")]
@@ -107,6 +125,44 @@ public class Settings : UnityModManager.ModSettings, IDrawable
         UnityModManager.UI.DrawFields(ref self, modEntry, DrawFieldMask.OnlyDrawAttr, OnChange);
         if (ShowAdvancedSettings && GUILayout.Button("Enable Developer Commands"))
             Console.RegisterDevCommands();
+
+        // Voice device selector (simple prev/next)
+        if (VoiceEnabled)
+        {
+            GUILayout.Space(5);
+            string[] devices = Microphone.devices ?? Array.Empty<string>();
+            // Build display list with a Default entry that maps to empty string
+            int listCount = (devices.Length > 0 ? devices.Length : 0) + 1;
+            string[] display = new string[listCount];
+            display[0] = "Default";
+            for (int i = 0; i < devices.Length; i++) display[i + 1] = devices[i];
+
+            // Find selected index
+            int idx = 0;
+            if (!string.IsNullOrEmpty(VoiceDeviceName))
+            {
+                for (int i = 0; i < devices.Length; i++)
+                    if (devices[i] == VoiceDeviceName) { idx = i + 1; break; }
+            }
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Microphone: {(idx == 0 ? "Default" : display[idx])}");
+            bool changed = false;
+            if (GUILayout.Button("<", GUILayout.Width(30))) { idx = (idx - 1 + listCount) % listCount; changed = true; }
+            if (GUILayout.Button(">", GUILayout.Width(30))) { idx = (idx + 1) % listCount; changed = true; }
+            if (GUILayout.Button("Refresh", GUILayout.Width(70))) { /* list recomputed next draw */ }
+            GUILayout.EndHorizontal();
+
+            if (changed)
+            {
+                VoiceDeviceName = idx == 0 ? string.Empty : display[idx];
+                OnVoiceSettingsUpdated?.Invoke(this);
+            }
+            if (devices.Length == 0)
+            {
+                GUILayout.Label("No microphone devices found.");
+            }
+        }
     }
 
     public override void Save(UnityModManager.ModEntry modEntry)
@@ -122,6 +178,8 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
         if (!UnloadWatcher.isQuitting)
             OnSettingsUpdated?.Invoke(this);
+        if (VoiceEnabled)
+            OnVoiceSettingsUpdated?.Invoke(this);
         Save(this, modEntry);
     }
 
@@ -163,11 +221,11 @@ public class Settings : UnityModManager.ModSettings, IDrawable
         Settings data = Settings.Load<Settings>(modEntry);
 
             MigrateSettings(ref data);
-            
+
             data.SettingsVer = GetCurrentVersion();
 
             data.Save(modEntry);
- 
+
         return data;
     }
 
@@ -198,7 +256,7 @@ public class Settings : UnityModManager.ModSettings, IDrawable
                 data.ShowAdvancedSettings = true;
                 data.DebugLogging = true;
                 data.ShowPingInNameTags = true;
-        
+
                 break;
 
             case 2:

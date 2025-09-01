@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiplayerAPI", "Multiplay
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiplayerAPITest", "MultiplayerAPI Tests\MultiplayerAPITest.csproj", "{65E62E81-6FD4-4995-9BF0-3AEF1ED32800}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiplayerVC", "MultiplayerVC\MultiplayerVC.csproj", "{23ACD085-F438-4A92-9DF4-188DCEA29E22}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,6 +28,10 @@ Global
 		{65E62E81-6FD4-4995-9BF0-3AEF1ED32800}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{65E62E81-6FD4-4995-9BF0-3AEF1ED32800}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{65E62E81-6FD4-4995-9BF0-3AEF1ED32800}.Release|Any CPU.Build.0 = Release|Any CPU
+		{23ACD085-F438-4A92-9DF4-188DCEA29E22}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {23ACD085-F438-4A92-9DF4-188DCEA29E22}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {23ACD085-F438-4A92-9DF4-188DCEA29E22}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {23ACD085-F438-4A92-9DF4-188DCEA29E22}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

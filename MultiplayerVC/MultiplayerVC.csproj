@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MultiplayerVC</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Codec -->
+  <ItemGroup>
+    <PackageReference Include="Concentus" Version="2.2.2" />
+  </ItemGroup>
+
+  <!-- Unity references resolved via Directory.Build.targets (DvInstallDir/UnityInstallDir) -->
+  <ItemGroup>
+    <Reference Include="UnityEngine" />
+    <Reference Include="UnityEngine.CoreModule" />
+    <Reference Include="UnityEngine.AudioModule" />
+    <Reference Include="UnityEngine.InputLegacyModule" />
+    <Reference Include="UnityEngine.IMGUIModule" />
+    <Reference Include="MultiplayerAPI">
+      <HintPath>..\build\MultiplayerAPI.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <!-- Copy the voice chat assembly to the repo build folder for convenience -->
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="..\build\" />
+  <!-- Also copy to the game Mods folder so runtime picks up the latest VC build -->
+  <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DvInstallDir)\Mods\Multiplayer" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
