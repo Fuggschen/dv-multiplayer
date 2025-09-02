@@ -88,7 +88,7 @@ internal class ServerTest : MonoBehaviour
 
             StringBuilder sb = new($"Tick {tick}.\r\nThere are {server.PlayerCount} players, their pings are:");
             foreach (IPlayer player in server.Players)
-                sb.AppendLine($"\"{player?.Id}\" {player.Ping} ms");
+                sb.AppendLine($"\"{player?.PlayerId}\" {player.Ping} ms");
 
             Log(sb.ToString());
 
@@ -103,7 +103,7 @@ internal class ServerTest : MonoBehaviour
         // Send mod settings, parameters, etc.
         // Note: This event occurs when the player is authenticated and before the player receives game state info
 
-        Log($"Player {player?.Id} (\"{player?.Username}\") has connected. (Is Loaded: {player?.IsLoaded})");
+        Log($"Player {player?.PlayerId} (\"{player?.Username}\") has connected. (Is Loaded: {player?.IsLoaded})");
     }
 
     private void OnPlayerReady(IPlayer player)
@@ -111,10 +111,10 @@ internal class ServerTest : MonoBehaviour
         // Player has indicated the world is loaded and they are ready to receive game state info
         // Note: This event occurs after the server has sent the game state, it does not guarantee the player has finished generating all cars, jobs, etc.
 
-        Log($"Player \"{player?.Id}\" is ready. (Is Loaded: {player?.IsLoaded})");
+        Log($"Player \"{player?.PlayerId}\" is ready. (Is Loaded: {player?.IsLoaded})");
 
         //Send an anouncement to all players
-        server.SendServerChatMessage($"Please welcome our newest driver {player?.Id}!");
+        server.SendServerChatMessage($"Please welcome our newest driver {player?.PlayerId}!");
     }
 
     private void OnPlayerDisconnected(IPlayer player)
@@ -335,7 +335,7 @@ internal class ServerTest : MonoBehaviour
         StringBuilder whisper = new($"<color=#{MESSAGE_COLOUR_SERVER}>There {(server.PlayerCount > 1 ? "are" : "is")} {server.PlayerCount} connected player{(server.PlayerCount > 1 ? "s" : "")}:");
 
         foreach (var player in server.Players)
-            whisper.Append($"<br>\t{(player.IsHost ? "<b>" : "")}{player.Username}{(player.IsHost ? "</b>" : "")} Id: {player.Id}, Ping: {player.Ping}{(player.IsOnCar ? $", Riding {player.OccupiedCar.ID}" : "")}");
+            whisper.Append($"<br>\t{(player.IsHost ? "<b>" : "")}{player.Username}{(player.IsHost ? "</b>" : "")} Id: {player.PlayerId}, Ping: {player.Ping}{(player.IsOnCar ? $", Riding {player.OccupiedCar.ID}" : "")}");
 
         whisper.Append("</color>");
 

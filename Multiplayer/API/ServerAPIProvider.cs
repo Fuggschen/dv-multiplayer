@@ -27,9 +27,9 @@ public class ServerAPIProvider : IServer
 
     public IReadOnlyCollection<IPlayer> Players => server.ServerPlayers.Select(GetWrapper).ToList().AsReadOnly();
 
-    public IPlayer GetPlayer(byte id)
+    public IPlayer GetPlayer(byte PlayerId)
     {
-        _playerWrapperCache.TryGetValue(id, out var player);
+        _playerWrapperCache.TryGetValue(PlayerId, out var player);
         return player;
     }
     #endregion
@@ -138,10 +138,10 @@ public class ServerAPIProvider : IServer
 
     private ServerPlayerWrapper GetWrapper(ServerPlayer serverPlayer)
     {
-        if (!_playerWrapperCache.TryGetValue(serverPlayer.Id, out var wrapper))
+        if (!_playerWrapperCache.TryGetValue(serverPlayer.PlayerId, out var wrapper))
         {
             wrapper = new ServerPlayerWrapper(serverPlayer);
-            _playerWrapperCache[serverPlayer.Id] = wrapper;
+            _playerWrapperCache[serverPlayer.PlayerId] = wrapper;
         }
         return wrapper;
     }
@@ -189,7 +189,7 @@ public class ServerAPIProvider : IServer
     private void OnPlayerDisconnectedInternal(ServerPlayer serverPlayer)
     {
         OnPlayerDisconnected?.Invoke(GetWrapper(serverPlayer));
-        _playerWrapperCache.Remove(serverPlayer.Id);
+        _playerWrapperCache.Remove(serverPlayer.PlayerId);
     }
 
     private void OnPlayerReadyInternal(ServerPlayer serverPlayer)

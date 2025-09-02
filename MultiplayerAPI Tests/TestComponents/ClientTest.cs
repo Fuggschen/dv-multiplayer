@@ -94,7 +94,7 @@ internal class ClientTest : MonoBehaviour
             {
                 StringBuilder sb = new($"Tick {tick}.\r\nThere are {client.PlayerCount} players, their pings are:");
                 foreach (IPlayer player in client.Players)
-                    sb.AppendLine($"\"{player?.Id}\" {player.Ping} ms");
+                    sb.AppendLine($"\"{player?.PlayerId}\" {player.Ping} ms");
 
                 Log(sb.ToString());
             }
@@ -109,14 +109,14 @@ internal class ClientTest : MonoBehaviour
     {
         // This event is called when another player connects
 
-        Log($"Player \"{player?.Id}\" has connected.");
+        Log($"Player \"{player?.PlayerId}\" has connected.");
     }
 
     private void OnPlayerDisconnected(IPlayer player)
     {
         // This event is called when another player disconnects
 
-        Log($"Player \"{player?.Id}\" has connected.");
+        Log($"Player \"{player?.PlayerId}\" has connected.");
     }
     #endregion
 

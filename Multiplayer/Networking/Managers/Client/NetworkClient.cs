@@ -53,7 +53,8 @@ public class NetworkClient : NetworkManager
     private Action<DisconnectReason, string> onDisconnect;
     private string disconnectMessage;
 
-    public ITransportPeer SelfPeer { get; private set; }
+    private ITransportPeer selfPeer;
+    public byte PlayerId{ get; private set; }
     public readonly ClientPlayerManager ClientPlayerManager;
 
     // One way ping in milliseconds
@@ -89,7 +90,7 @@ public class NetworkClient : NetworkManager
             Mods = ModCompatibilityManager.Instance.GetLocalMods()
         };
         netPacketProcessor.Write(cachedWriter, serverboundClientLoginPacket);
-        SelfPeer = Connect(address, port, cachedWriter);
+        selfPeer = Connect(address, port, cachedWriter);
 
         isAlsoHost = NetworkLifecycle.Instance.IsServerRunning;
         originalSession = UserManager.Instance.CurrentUser.CurrentSession;
@@ -254,8 +255,9 @@ public class NetworkClient : NetworkManager
         if (packet.Accepted)
         {
             Log($"Received player accepted packet");
+            PlayerId = packet.PlayerId;
 
-            if (NetworkLifecycle.Instance.IsHost(SelfPeer))
+            if (NetworkLifecycle.Instance.IsHost())
                 SendReadyPacket();
             else
                 SendSaveGameDataRequest();
@@ -290,16 +292,16 @@ public class NetworkClient : NetworkManager
     private void OnClientboundPlayerJoinedPacket(ClientboundPlayerJoinedPacket packet)
     {
         //Guid guid = new(packet.Guid);
-        ClientPlayerManager.AddPlayer(packet.Id, packet.Username);
+        ClientPlayerManager.AddPlayer(packet.PlayerId, packet.Username);
 
-        ClientPlayerManager.UpdatePosition(packet.Id, packet.Position, Vector3.zero, packet.Rotation, false, packet.CarID != 0, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, Vector3.zero, packet.Rotation, false, packet.CarID != 0, packet.CarID);
     }
 
     //For other player left the game
     private void OnClientboundPlayerDisconnectPacket(ClientboundPlayerDisconnectPacket packet)
     {
-        Log($"Received player disconnect packet for player id: {packet.Id}");
-        ClientPlayerManager.RemovePlayer(packet.Id);
+        Log($"Received player disconnect packet for player id: {packet.PlayerId}");
+        ClientPlayerManager.RemovePlayer(packet.PlayerId);
     }
 
 
@@ -318,12 +320,12 @@ public class NetworkClient : NetworkManager
     }
     private void OnClientboundPlayerPositionPacket(ClientboundPlayerPositionPacket packet)
     {
-        ClientPlayerManager.UpdatePosition(packet.Id, packet.Position, packet.MoveDir, packet.RotationY, packet.IsJumping, packet.IsOnCar, packet.CarID);
+        ClientPlayerManager.UpdatePosition(packet.PlayerId, packet.Position, packet.MoveDir, packet.RotationY, packet.IsJumping, packet.IsOnCar, packet.CarID);
     }
 
     private void OnClientboundPingUpdatePacket(ClientboundPingUpdatePacket packet)
     {
-        ClientPlayerManager.UpdatePing(packet.Id, packet.Ping);
+        ClientPlayerManager.UpdatePing(packet.PlayerId, packet.Ping);
     }
 
     private void OnClientboundTickSyncPacket(ClientboundTickSyncPacket packet)

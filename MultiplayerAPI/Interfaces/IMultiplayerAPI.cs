@@ -33,7 +33,7 @@ public interface IMultiplayerAPI
     /// Returns true if either a host or client exist
     /// </summary>
     bool IsConnected { get; }
-
+ 
     /// <summary>
     /// Gets whether this instance is host
     /// </summary>

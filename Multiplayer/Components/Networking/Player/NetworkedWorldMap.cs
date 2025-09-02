@@ -93,7 +93,7 @@ public class NetworkedMapMarkersController : MonoBehaviour
             if(kvp.Value == null)
                 Multiplayer.LogDebug(() => $"NetworkedWorldMap.UpdatePlayers() key: {kvp.Key}, value is null: {kvp.Value == null}");
 
-            if (!NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(kvp.Key.Id, out NetworkedPlayer networkedPlayer))
+            if (!NetworkLifecycle.Instance.Client.ClientPlayerManager.TryGetPlayer(kvp.Key.PlayerId, out NetworkedPlayer networkedPlayer))
             {
                 Multiplayer.LogWarning($"Player indicator for {kvp.Key} exists but {nameof(NetworkedPlayer)} does not!");
                 OnPlayerDisconnected(kvp.Key);

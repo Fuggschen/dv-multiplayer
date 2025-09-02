@@ -15,7 +15,7 @@ public class ClientPlayerWrapper : IPlayer
         _isHost = isHost;
     }
 
-    public byte Id => _networkedPlayer.Id;
+    public byte PlayerId => _networkedPlayer.PlayerId;
     public string Username
     {
         get => _networkedPlayer.Username;

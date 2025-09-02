@@ -1,14 +1,16 @@
 using Multiplayer.Components.Networking;
 using Multiplayer.Networking.Data;
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
+using System.Text;
+using System;
 
 namespace Multiplayer.Networking.Managers.Server;
+
 public delegate void ChatCommandCallbackInternal(string message, ServerPlayer sender);
 public delegate bool ChatFilterDelegateInternal(ref string message, ServerPlayer sender);
+
 public class ChatManager
 {
     public const string COMMAND_SERVER = "server";
@@ -173,7 +175,7 @@ public class ChatManager
     public void ServerMessage(string message, ServerPlayer sender, ServerPlayer exclude = null)
     {
         //If user is not the host, we should ignore - will require changes for dedicated server
-        if (sender != null && !NetworkLifecycle.Instance.IsHost(sender.Peer))
+        if (sender != null && !NetworkLifecycle.Instance.IsHost(sender))
             return;
 
         message = $"<color=#{MESSAGE_COLOUR_SERVER}>{message}</color>";
@@ -182,7 +184,7 @@ public class ChatManager
 
     private void WhisperMessage(string message, ServerPlayer sender)
     {
-        Multiplayer.LogDebug(() => $"Whispering: \"{message}\", sender: {sender?.Username}, senderID: {sender?.Id}");
+        Multiplayer.LogDebug(() => $"Whispering: \"{message}\", sender: {sender?.Username}, senderID: {sender?.PlayerId}");
 
         if (sender == null)
             return;
@@ -199,20 +201,20 @@ public class ChatManager
         string whisperMessage = parts[1];
 
 
-        Multiplayer.LogDebug(() => $"Whispering parse 1: \"{message}\", sender: {sender?.Username}, senderID: {sender?.Id}, peerName: {recipientName}");
+        Multiplayer.LogDebug(() => $"Whispering parse 1: \"{message}\", sender: {sender?.Username}, senderID: {sender?.PlayerId}, peerName: {recipientName}");
 
         //look up the peer ID
         var recipient = ServerPlayerFromUsername(recipientName);
         if (recipient == null)
         {
-            Multiplayer.LogDebug(() => $"Whispering failed: \"{message}\", sender: {sender?.Username}, senderID: {sender?.Id}, peerName: {recipientName}");
+            Multiplayer.LogDebug(() => $"Whispering failed: \"{message}\", sender: {sender?.Username}, senderID: {sender?.PlayerId}, peerName: {recipientName}");
 
             whisperMessage = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_WHISPER_NOT_FOUND_KEY, recipientName)}</color>";
             NetworkLifecycle.Instance.Server.SendWhisper(whisperMessage, sender);
             return;
         }
 
-        Multiplayer.LogDebug(() => $"Whispering parse 2: \"{message}\", sender: {sender?.Username}, senderID: {sender?.Id}, peerName: {recipientName}, peerID: {recipient?.Id}");
+        Multiplayer.LogDebug(() => $"Whispering parse 2: \"{message}\", sender: {sender?.Username}, senderID: {sender?.PlayerId}, peerName: {recipientName}, peerID: {recipient?.PlayerId}");
 
         //clean up the message to stop format injection
         whisperMessage = Regex.Replace(whisperMessage, "</noparse>", string.Empty, RegexOptions.IgnoreCase);
@@ -236,7 +238,7 @@ public class ChatManager
         string whisper;
 
         //If user is not the host, we should ignore - will require changes for dedicated server
-        if (sender == null || !NetworkLifecycle.Instance.IsHost(sender.Peer))
+        if (sender == null || !NetworkLifecycle.Instance.IsHost(sender))
             return;
 
         playerName = message.Split(' ')[0];
@@ -245,13 +247,13 @@ public class ChatManager
 
         playerToKick = ServerPlayerFromUsername(playerName);
 
-        if (playerToKick == null || NetworkLifecycle.Instance.IsHost(playerToKick.Peer))
+        if (playerToKick == null || NetworkLifecycle.Instance.IsHost(playerToKick))
         {
-            whisper = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_KICK_UNABLE_KEY, playerName)}</color>";
+            whisper = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_KICK_UNABLE_KEY, [playerName])}</color>";
         }
         else
         {
-            whisper = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_KICK_KICKED_KEY, playerName)}</color>";
+            whisper = $"<color=#{MESSAGE_COLOUR_SERVER}>{Locale.Get(Locale.CHAT_KICK_KICKED_KEY, [playerName])}</color>";
 
             NetworkLifecycle.Instance.Server.KickPlayer(playerToKick);
         }

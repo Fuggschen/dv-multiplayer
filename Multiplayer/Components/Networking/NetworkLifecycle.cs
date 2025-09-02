@@ -1,25 +1,20 @@
 using DV.Scenarios.Common;
 using DV.Utils;
 using LiteNetLib;
-using LiteNetLib.Utils;
 using MPAPI;
 using Multiplayer.API;
 using Multiplayer.Components.Networking.UI;
 using Multiplayer.Networking.Data;
-using Multiplayer.Networking.Managers;
 using Multiplayer.Networking.Managers.Client;
 using Multiplayer.Networking.Managers.Server;
-using Multiplayer.Networking.TransportLayers;
+using Multiplayer.Networking.Managers;
 using Multiplayer.Utils;
-using Newtonsoft.Json;
-using Steamworks;
-using System;
-using System.Collections;
 using System.Collections.Generic;
+using System.Collections;
 using System.Net;
-using System.Text;
-using UnityEngine;
+using System;
 using UnityEngine.SceneManagement;
+using UnityEngine;
 
 namespace Multiplayer.Components.Networking;
 
@@ -54,9 +49,9 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     ///     Whether the provided ITransportPeer is the host.
     ///     Note that this does NOT check authority, and should only be used for client-only logic.
     /// </summary>
-    public bool IsHost(ITransportPeer peer)
+    public bool IsHost(ServerPlayer player)
     {
-        return Server?.IsRunning == true && Client?.IsRunning == true && Client?.SelfPeer?.Id == peer?.Id;
+        return Server?.IsRunning == true && Client?.IsRunning == true && Client.PlayerId == player.PlayerId;
     }
 
     /// <summary>
@@ -65,7 +60,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     /// </summary>
     public bool IsHost()
     {
-        return IsHost(Client?.SelfPeer);
+        return Server?.IsRunning == true;
     }
 
     private readonly Queue<Action> mainMenuLoadedQueue = new();
@@ -152,7 +147,7 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
         return true;
     }
 
-    public void StartClient(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason,string> onDisconnect )
+    public void StartClient(string address, int port, string password, bool isSinglePlayer, Action<DisconnectReason, string> onDisconnect)
     {
         if (Client != null)
             throw new InvalidOperationException("NetworkManager already exists!");
@@ -190,10 +185,10 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
                 tickWatchdog.Stop(time => Multiplayer.LogWarning($"OnTick took {time} ms!"));
             }
 
-            if(Client != null)
+            if (Client != null)
                 TickManager(Client);
 
-            if(Server != null)
+            if (Server != null)
                 TickManager(Server);
 
             float elapsedTime = tickTimer.Stop();
@@ -226,18 +221,23 @@ public class NetworkLifecycle : SingletonBehaviour<NetworkLifecycle>
     public void Stop()
     {
         Stats?.Hide();
-        Server?.Stop();
-        Client?.Stop();
 
-        // Clear API registrations
-        MultiplayerAPI.ClearServer();
-        MultiplayerAPI.ClearClient();
+        if (Server != null)
+        {
+            Server?.Stop();
+            MultiplayerAPI.ClearServer();
+            Server = null;
+        }
 
-        Server = null;
-        Client = null;
+        if (Client != null)
+        {
+            Client?.Stop();
+            MultiplayerAPI.ClearClient();
+            Client = null;
+        }
     }
 
-    private void OnApplicationQuit()
+    protected void OnApplicationQuit()
     {
         Stop();
     }

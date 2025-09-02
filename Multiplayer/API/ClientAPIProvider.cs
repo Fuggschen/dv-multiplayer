@@ -18,12 +18,13 @@ namespace Multiplayer.API
         public event Action<IPlayer> OnPlayerDisconnected;
 
         #region Client Properties
+        public byte PlayerId => client.PlayerId;
         public IReadOnlyCollection<IPlayer> Players => client.ClientPlayerManager.Players.Select(GetWrapper).ToList().AsReadOnly();
         public int PlayerCount => client.ClientPlayerManager.Players.Count + 1; // add 1 for local player
 
-        public IPlayer GetPlayer(byte id)
+        public IPlayer GetPlayer(byte playerId)
         {
-            _playerWrapperCache.TryGetValue(id, out var player);
+            _playerWrapperCache.TryGetValue(playerId, out var player);
             return player;
         }
 
@@ -72,10 +73,10 @@ namespace Multiplayer.API
 
         private ClientPlayerWrapper GetWrapper(NetworkedPlayer networkedPlayer)
         {
-            if (!_playerWrapperCache.TryGetValue(networkedPlayer.Id, out var wrapper))
+            if (!_playerWrapperCache.TryGetValue(networkedPlayer.PlayerId, out var wrapper))
             {
                 wrapper = new ClientPlayerWrapper(networkedPlayer);
-                _playerWrapperCache[networkedPlayer.Id] = wrapper;
+                _playerWrapperCache[networkedPlayer.PlayerId] = wrapper;
             }
             return wrapper;
         }
@@ -88,7 +89,7 @@ namespace Multiplayer.API
         private void OnPlayerDisconnectedInternal(Components.Networking.Player.NetworkedPlayer networkedPlayer)
         {
             OnPlayerDisconnected?.Invoke(GetWrapper(networkedPlayer));
-            _playerWrapperCache.Remove(networkedPlayer.Id);
+            _playerWrapperCache.Remove(networkedPlayer.PlayerId);
         }
         #endregion
     }

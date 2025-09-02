@@ -580,7 +580,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
     public bool Server_ValidateCouplerInteraction(CommonCouplerInteractionPacket packet, ServerPlayer player)
     {
         Multiplayer.LogDebug(() =>
-                $"Server_ValidateCouplerInteraction([[{(CouplerInteractionType)packet.Flags}], {CurrentID}, {packet.NetId}], {player.Id}) " +
+                $"Server_ValidateCouplerInteraction([[{(CouplerInteractionType)packet.Flags}], {CurrentID}, {packet.NetId}], {player.PlayerId}) " +
                 $"isFront: {packet.IsFrontCoupler}, frontInteracting: {frontInteracting}, frontInteractionPeer: {frontInteractionPlayer}, " +
                 $"rearInteracting: {rearInteracting}, rearInteractionPeer: {rearInteractionPlayer}"
                 );
@@ -589,11 +589,11 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
         if (packet.IsFrontCoupler && frontInteracting && player != frontInteractionPlayer ||
            packet.IsFrontCoupler == false && rearInteracting && player != rearInteractionPlayer)
         {
-            Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.Id}) Failed to validate!");
+            Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.PlayerId}) Failed to validate!");
             return false;
         }
 
-        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.Id}) No one interacting");
+        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.PlayerId}) No one interacting");
 
         if (((CouplerInteractionType)packet.Flags).HasFlag(CouplerInteractionType.Start))
         {
@@ -618,7 +618,7 @@ public class NetworkedTrainCar : IdMonoBehaviour<ushort, NetworkedTrainCar>
 
         //todo: Additional checks for player location/proximity
 
-        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.Id}) Validation passed!");
+        Multiplayer.LogDebug(() => $"Server_ValidateCouplerInteraction([{packet.Flags}, {CurrentID}, {packet.NetId}], {player.PlayerId}) Validation passed!");
         return true;
     }
 

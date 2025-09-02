@@ -15,7 +15,7 @@ namespace MPAPI.Interfaces
         /// This identifier can be used as a network ID for referencing the player across the network.
         /// If the player leaves the session the Id will be reassigned to the next player to join.
         /// </remarks>
-        public byte Id { get; }
+        public byte PlayerId { get; }
 
         /// <summary>
         /// Gets the username/display name of the player.

@@ -1,5 +1,3 @@
-using System;
-using MPAPI.Interfaces;
 using Multiplayer.Components.Networking.Train;
 using Multiplayer.Editor.Components.Player;
 using UnityEngine;
@@ -10,7 +8,7 @@ public class NetworkedPlayer : MonoBehaviour
 {
     private const float LERP_SPEED = 5.0f;
 
-    public byte Id { get; set; }
+    public byte PlayerId { get; set; }
 
     private AnimationHandler animationHandler;
     private NameTag nameTag;

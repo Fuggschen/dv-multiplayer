@@ -22,6 +22,13 @@ public interface IClient
     /// <returns>IPlayer object for the disconnected player</returns>
     event Action<IPlayer> OnPlayerDisconnected;
 
+    /// <summary>
+    /// Gets Player Id of the local player
+    /// </summary>
+    /// <remarks>
+    /// The local player does not have an IPlayer object
+    /// </remarks>
+    byte PlayerId { get; }
 
     /// <summary>
     /// Gets IPlayer objects for all players connected to the server
@@ -39,7 +46,7 @@ public interface IClient
     /// Gets IPlayer for player by Id
     /// </summary>
     /// <returns>IPlayer object if found, otherwise null</returns>
-    IPlayer GetPlayer(byte id);
+    IPlayer GetPlayer(byte playerId);
 
     /// <summary>
     /// Gets connection state for the client

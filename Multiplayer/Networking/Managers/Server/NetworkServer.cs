@@ -47,7 +47,6 @@ public class NetworkServer : NetworkManager
 
     private readonly Queue<ITransportPeer> joinQueue = new();   //Queue for players attempting to join while server is loading
 
-    private readonly IdPool<byte> playerIdPool = new();                             //player Id management
     private readonly Dictionary<byte, ServerPlayer> serverPlayers = [];             //player Id to ServerPlayer mapping
     private readonly Dictionary<byte, ITransportPeer> peers = [];                   //player Id to peer mapping
     private readonly Dictionary<ITransportPeer, ServerPlayer> peerToPlayer = [];    //peer to ServerPlayer mapping
@@ -60,8 +59,20 @@ public class NetworkServer : NetworkManager
     public IReadOnlyCollection<ServerPlayer> ServerPlayers => serverPlayers.Values;
     public int PlayerCount => ServerPlayers.Count;
 
-    private static ITransportPeer SelfPeer => NetworkLifecycle.Instance.Client?.SelfPeer;
-    public static byte SelfId => (byte)SelfPeer.Id;
+    private ITransportPeer _selfPeer;
+    public ITransportPeer SelfPeer
+    {
+        get
+        {
+            if (_selfPeer != null)
+                return _selfPeer;
+
+            peers.TryGetValue(SelfId, out _selfPeer);
+            return _selfPeer;
+        }
+    }
+
+    public byte SelfId => NetworkLifecycle.Instance.Client?.PlayerId ?? 0;
 
     public readonly IDifficulty Difficulty;
     private bool IsLoaded;
@@ -212,26 +223,24 @@ public class NetworkServer : NetworkManager
 
     public bool TryGetServerPlayer(ITransportPeer peer, out ServerPlayer player)
     {
-        return serverPlayers.TryGetValue((byte)peer.Id, out player);
-    }
-    public bool TryGetServerPlayer(byte id, out ServerPlayer player)
-    {
-        return serverPlayers.TryGetValue(id, out player);
+        return peerToPlayer.TryGetValue(peer, out player);
     }
 
-    public bool TryGetPeer(byte id, out ITransportPeer peer)
+    public bool TryGetServerPlayer(byte playerId, out ServerPlayer player)
     {
-        return peers.TryGetValue(id, out peer);
+        return serverPlayers.TryGetValue(playerId, out player);
     }
 
     #region Net Events
 
     public override void OnPeerConnected(ITransportPeer peer)
     {
+        LogDebug(() => $"OnPeerConnected({peer.Id})");
     }
 
     public override void OnPeerDisconnected(ITransportPeer peer, DisconnectReason disconnectReason)
     {
+        LogDebug(() => $"OnPeerDisconnected({peer.Id})");
         if (!peerToPlayer.TryGetValue(peer, out ServerPlayer player))
         {
             LogWarning($"Peer {peer.GetType()}, peerId: {peer.Id} disconnected but no player found");
@@ -243,15 +252,15 @@ public class NetworkServer : NetworkManager
         if (WorldStreamingInit.isLoaded)
             SaveGameManager.Instance.UpdateInternalData();
 
-        serverPlayers.Remove(player.Id);
-        peers.Remove(player.Id);
+        serverPlayers.Remove(player.PlayerId);
+        peers.Remove(player.PlayerId);
         peerToPlayer.Remove(peer);
 
         SendPacketToAll
             (
                 new ClientboundPlayerDisconnectPacket
                 {
-                    Id = player.Id
+                    PlayerId = player.PlayerId
                 },
                 DeliveryMethod.ReliableUnordered
             );
@@ -263,9 +272,12 @@ public class NetworkServer : NetworkManager
 
     public override void OnNetworkLatencyUpdate(ITransportPeer peer, int latency)
     {
+        if (!TryGetServerPlayer(peer, out var player))
+            return;
+
         ClientboundPingUpdatePacket clientboundPingUpdatePacket = new()
         {
-            Id = (byte)peer.Id,
+            PlayerId = player.PlayerId,
             Ping = latency
         };
 
@@ -273,12 +285,11 @@ public class NetworkServer : NetworkManager
 
         if (latency > LATENCY_FLAG)
         {
-            serverPlayers.TryGetValue((byte)peer.Id, out var player);
-            LogWarning($"High Ping Detected! Player: \"{player?.Username}\", ping: {latency}ms");
+            LogWarning($"High Ping Detected! Player: \"{player.Username}\", ping: {latency}ms");
         }
 
         // Ensure we don't send a TickSync packet to ourselves
-        if (peer.Id == SelfPeer.Id)
+        if (peer == SelfPeer)
             return;
 
         SendPacket(peer, new ClientboundTickSyncPacket
@@ -300,36 +311,36 @@ public class NetworkServer : NetworkManager
     private void SendPacketToAll<T>(T packet, DeliveryMethod deliveryMethod) where T : class, new()
     {
         NetDataWriter writer = WritePacket(packet);
-        foreach (KeyValuePair<byte, ITransportPeer> kvp in peers)
-            kvp.Value?.Send(writer, deliveryMethod);
+        foreach (var peer in peers.Values)
+            peer?.Send(writer, deliveryMethod);
     }
 
     private void SendPacketToAll<T>(T packet, DeliveryMethod deliveryMethod, ITransportPeer excludePeer) where T : class, new()
     {
         NetDataWriter writer = WritePacket(packet);
-        foreach (KeyValuePair<byte, ITransportPeer> kvp in peers)
+        foreach (var peer in peers.Values)
         {
-            if (kvp.Key == excludePeer.Id)
+            if (peer == excludePeer)
                 continue;
-            kvp.Value.Send(writer, deliveryMethod);
+            peer?.Send(writer, deliveryMethod);
         }
     }
 
     private void SendNetSerializablePacketToAll<T>(T packet, DeliveryMethod deliveryMethod) where T : INetSerializable, new()
     {
         NetDataWriter writer = WriteNetSerializablePacket(packet);
-        foreach (KeyValuePair<byte, ITransportPeer> kvp in peers)
-            kvp.Value.Send(writer, deliveryMethod);
+        foreach (var peer in peers.Values)
+            peer?.Send(writer, deliveryMethod);
     }
 
     private void SendNetSerializablePacketToAll<T>(T packet, DeliveryMethod deliveryMethod, ITransportPeer excludePeer) where T : INetSerializable, new()
     {
         NetDataWriter writer = WriteNetSerializablePacket(packet);
-        foreach (KeyValuePair<byte, ITransportPeer> kvp in peers)
+        foreach (var peer in peers.Values)
         {
-            if (kvp.Key == excludePeer.Id)
+            if (peer == excludePeer)
                 continue;
-            kvp.Value.Send(writer, deliveryMethod);
+            peer?.Send(writer, deliveryMethod);
         }
     }
 
@@ -634,9 +645,9 @@ public class NetworkServer : NetworkManager
     {
         Multiplayer.Log($"Sending SendItemsChangePacket with {items.Count()} items to {player.Username}");
 
-        if (peers.TryGetValue(player.Id, out ITransportPeer peer) && peer != SelfPeer)
+        if (player.Peer != null && player.Peer != SelfPeer)
         {
-            SendNetSerializablePacket(peer, new CommonItemChangePacket { Items = items },
+            SendNetSerializablePacket(player.Peer, new CommonItemChangePacket { Items = items },
                 DeliveryMethod.ReliableOrdered);
         }
     }
@@ -678,6 +689,8 @@ public class NetworkServer : NetworkManager
 
     private void OnServerboundClientLoginPacket(ServerboundClientLoginPacket packet, IConnectionRequest request)
     {
+        LogDebug(() => $"OnServerboundClientLoginPacket from {packet.Username}");
+
         // clean up username - remove leading/trailing white space, swap spaces for underscores and truncate
         packet.Username = packet.Username.Trim().Replace(' ', '_').Truncate(Settings.MAX_USERNAME_LENGTH);
         string overrideUsername = packet.Username;
@@ -780,14 +793,13 @@ public class NetworkServer : NetworkManager
 
         ServerPlayer serverPlayer = new
         (
-            playerIdPool,
             peer,
             overrideUsername,
             packet.Username,
             guid
         );
 
-        serverPlayers.Add(serverPlayer.Id, serverPlayer);
+        serverPlayers.Add(serverPlayer.PlayerId, serverPlayer);
         peerToPlayer.Add(peer, serverPlayer);
 
         PlayerConnected?.Invoke(serverPlayer);
@@ -795,6 +807,7 @@ public class NetworkServer : NetworkManager
         ClientboundLoginResponsePacket acceptPacket = new()
         {
             Accepted = true,
+            PlayerId = serverPlayer.PlayerId,
         };
 
         SendPacket(peer, acceptPacket, DeliveryMethod.ReliableUnordered);
@@ -802,13 +815,20 @@ public class NetworkServer : NetworkManager
 
     private void OnServerboundSaveGameDataRequestPacket(ServerboundSaveGameDataRequestPacket packet, ITransportPeer peer)
     {
-        if (peers.ContainsKey((byte)peer.Id))
+        LogDebug(() => $"OnServerboundSaveGameDataRequestPacket from peerId: {peer.Id}");
+
+        if (!TryGetServerPlayer(peer, out ServerPlayer player))
         {
-            LogWarning("Denied save game data request from already connected peer!");
+            LogError($"Save game data request received for {peer.GetType()}, peerId: {peer.Id}, but ServerPlayer not found");
+            peer.Disconnect();
             return;
         }
 
-        TryGetServerPlayer(peer, out ServerPlayer player);
+        //if (peers.ContainsKey((byte)peer.Id))
+        //{
+        //    LogWarning("Denied save game data request from already connected peer!");
+        //    return;
+        //}
 
         SendPacket(peer, ClientboundGameParamsPacket.FromGameParams(Globals.G.GameParams), DeliveryMethod.ReliableOrdered);
         SendPacket(peer, ClientboundSaveGameDataPacket.CreatePacket(player), DeliveryMethod.ReliableOrdered);
@@ -816,6 +836,7 @@ public class NetworkServer : NetworkManager
 
     private void OnServerboundClientReadyPacket(ServerboundClientReadyPacket packet, ITransportPeer peer)
     {
+        LogDebug(() => $"OnServerboundClientReadyPacket from peerId: {peer.Id}");
 
         if (!peerToPlayer.TryGetValue(peer, out ServerPlayer serverPlayer))
         {
@@ -837,12 +858,12 @@ public class NetworkServer : NetworkManager
             AppUtil.Instance.RequestSystemOnValueChanged(0.0f);
 
         // Allow the player to receive packets
-        peers.Add(serverPlayer.Id, peer);
+        peers.Add(serverPlayer.PlayerId, peer);
 
         // Send the new player to all other players
         ClientboundPlayerJoinedPacket clientboundPlayerJoinedPacket = new()
         {
-            Id = serverPlayer.Id,
+            PlayerId = serverPlayer.PlayerId,
             Username = serverPlayer.Username,
             //Guid = serverPlayer.Guid.ToByteArray()
         };
@@ -854,7 +875,7 @@ public class NetworkServer : NetworkManager
         Log($"Client {peer.Id} is ready. Sending world state");
 
         // No need to sync the world state if the player is the host
-        if (NetworkLifecycle.Instance.IsHost(peer))
+        if (NetworkLifecycle.Instance.IsHost(serverPlayer))
         {
             SendPacket(peer, new ClientboundRemoveLoadingScreenPacket(), DeliveryMethod.ReliableOrdered);
             serverPlayer.IsLoaded = true;
@@ -914,11 +935,11 @@ public class NetworkServer : NetworkManager
         // Send existing players
         foreach (ServerPlayer player in ServerPlayers)
         {
-            if (player.Id == serverPlayer.Id)
+            if (player.PlayerId == serverPlayer.PlayerId)
                 continue;
             SendPacket(peer, new ClientboundPlayerJoinedPacket
             {
-                Id = player.Id,
+                PlayerId = player.PlayerId,
                 Username = player.Username,
                 //Guid = player.Guid.ToByteArray(),
                 CarID = player.CarId,
@@ -938,17 +959,19 @@ public class NetworkServer : NetworkManager
 
     private void OnServerboundPlayerPositionPacket(ServerboundPlayerPositionPacket packet, ITransportPeer peer)
     {
-        if (TryGetServerPlayer(peer, out ServerPlayer player))
+        if (!TryGetServerPlayer(peer, out ServerPlayer player))
         {
-            player.CarId = packet.CarID;
-            player.RawPosition = packet.Position;
-            player.RawRotationY = packet.RotationY;
-
+            LogWarning($"Received Player Position from {peer.GetType()}, peerId: {peer.Id}, but could not find matching player.");
+            return;
         }
+ 
+        player.CarId = packet.CarID;
+        player.RawPosition = packet.Position;
+        player.RawRotationY = packet.RotationY;
 
         ClientboundPlayerPositionPacket clientboundPacket = new()
         {
-            Id = (byte)peer.Id,
+            PlayerId = player.PlayerId,
             Position = packet.Position,
             MoveDir = packet.MoveDir,
             RotationY = packet.RotationY,
@@ -995,7 +1018,7 @@ public class NetworkServer : NetworkManager
             }
             else
             {
-                LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {player.Id}) Sending validation failure");
+                LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {player.PlayerId}) Sending validation failure");
                 //failed validation notify client
                 SendPacket(
                             peer,
@@ -1011,7 +1034,7 @@ public class NetworkServer : NetworkManager
         }
         else
         {
-            LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {player.Id}) Sending destroy");
+            LogDebug(() => $"OnCommonCouplerInteractionPacket([{packet.Flags}, {netTrainCar.CurrentID}, {packet.NetId}], {player.PlayerId}) Sending destroy");
             //Car doesn't exist, tell client to delete it
             SendDestroyTrainCar(netTrainCar, peer);
         }
@@ -1079,7 +1102,7 @@ public class NetworkServer : NetworkManager
         if (float.IsNaN(packet.CoalMassDelta))
             return;
 
-        if (!NetworkLifecycle.Instance.IsHost(peer))
+        if (!NetworkLifecycle.Instance.IsHost(player))
         {
             float carLength = CarSpawner.Instance.carLiveryToCarLength[networkedTrainCar.TrainCar.carLivery];
 
@@ -1098,7 +1121,7 @@ public class NetworkServer : NetworkManager
         if (!NetworkedTrainCar.TryGet(packet.NetId, out NetworkedTrainCar networkedTrainCar))
             return;
 
-        if (!NetworkLifecycle.Instance.IsHost(peer))
+        if (!NetworkLifecycle.Instance.IsHost(player))
         {
             //is player close enough to ignite firebox?
             float carLength = CarSpawner.Instance.carLiveryToCarLength[networkedTrainCar.TrainCar.carLivery];
@@ -1115,7 +1138,7 @@ public class NetworkServer : NetworkManager
             return;
 
         //if not the host && validation fails then ignore packet
-        if (!NetworkLifecycle.Instance.IsHost(peer))
+        if (!NetworkLifecycle.Instance.IsHost(player))
         {
             bool flag = networkedTrainCar.Server_ValidateClientSimFlowPacket(player, packet);
 
