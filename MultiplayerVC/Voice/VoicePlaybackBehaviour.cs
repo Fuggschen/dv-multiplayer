@@ -9,8 +9,8 @@ namespace MultiplayerVC.Voice
     public sealed class VoicePlaybackBehaviour : MonoBehaviour
     {
         [Range(0f, 1f)] public float volume = 1f;
-        [Range(0f, 1f)] public float spatialBlend = 0.8f;
-        [Range(0f, 5f)] public float maxDistance = 25f;
+        [Range(0f, 1f)] public float spatialBlend = 1f;
+        [Range(0f, 50f)] public float maxDistance = 25f;
         public int jitterBufferMs = 80;
 
         public IVoiceTransport? Transport { get; set; }
@@ -85,6 +85,7 @@ namespace MultiplayerVC.Voice
                 stream.AudioObject = go;
                 var src = go.AddComponent<AudioSource>();
                 src.spatialBlend = spatialBlend;
+                src.rolloffMode = AudioRolloffMode.Logarithmic;
                 src.maxDistance = maxDistance;
                 src.loop = true;
                 src.playOnAwake = true;
