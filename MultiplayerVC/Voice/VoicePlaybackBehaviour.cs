@@ -8,9 +8,9 @@ namespace MultiplayerVC.Voice
     public sealed class VoicePlaybackBehaviour : MonoBehaviour
     {
         [Range(0f, 1f)] public float volume = 1f;
-        [Range(0f, 1f)] public float spatialBlend = 1f;
-        [Range(0f, 50f)] public float maxDistance = 25f;
-        // public int jitterBufferMs = 80;
+        [Range(0f, 1f)] public float spatialBlend = 0.8f;
+        [Range(0f, 5f)] public float maxDistance = 25f;
+        public int jitterBufferMs = 80;
 
         public IVoiceTransport? Transport { get; set; }
 
@@ -19,7 +19,7 @@ namespace MultiplayerVC.Voice
             public readonly Queue<VoiceFrame> Queue = new Queue<VoiceFrame>(64);
             public readonly OpusDecoderWrapper Decoder = new OpusDecoderWrapper();
             public float[] Pcm = new float[OpusEncoderWrapper.DefaultFrameSamples];
-            // public float JitterTimer;
+            public float JitterTimer;
             public ushort LastSeq;
             public AudioSource? Audio;
             public AudioClip? Clip;
@@ -86,20 +86,6 @@ namespace MultiplayerVC.Voice
             while (stream.Queue.Count > 0 && RingAvailable(stream) >= OpusEncoderWrapper.DefaultFrameSamples)
             {
                 var frame = stream.Queue.Dequeue();
-                // Basic PLC: if we detect a gap, ask decoder to conceal for each missing frame
-                if (stream.LastSeq != 0)
-                {
-                    int expected = (ushort)(stream.LastSeq + 1);
-                    int gap = (frame.Sequence - expected) & 0xFFFF; // handle wraparound
-                    if (gap > 0 && gap < 10) // cap to avoid long stalls
-                    {
-                        for (int i = 0; i < gap; i++)
-                        {
-                            try { stream.Decoder.Decode(Array.Empty<byte>(), 0, 0, stream.Pcm, 0, OpusEncoderWrapper.DefaultFrameSamples); WriteRing(stream, stream.Pcm, OpusEncoderWrapper.DefaultFrameSamples); }
-                            catch { /* ignore PLC errors */ }
-                        }
-                    }
-                }
                 int decoded = 0;
                 try
                 {

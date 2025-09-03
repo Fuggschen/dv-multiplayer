@@ -26,7 +26,17 @@
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <!-- Copy the voice chat assembly to the repo build folder for convenience -->
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="..\build\" />
-  <!-- Also copy to the game Mods folder so runtime picks up the latest VC build -->
-  <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DvInstallDir)\Mods\Multiplayer" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyVcDependencies" AfterTargets="Build">
+    <!-- Copy NuGet local-copy dependencies (e.g., Concentus.dll) to repo build and game mod folder -->
+    <ItemGroup>
+  <!-- Start from everything the build marked as CopyLocal -->
+  <AllDeps Include="@(ReferenceCopyLocalPaths)" />
+  <!-- Whitelist only Concentus libraries; Unity/System facades come from the game runtime -->
+  <DepsToCopy Include="@(AllDeps)" Condition="'%(Filename)' == 'Concentus' or '%(Filename)' == 'Concentus.Native'" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DepsToCopy)" DestinationFolder="..\build\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DepsToCopy)" DestinationFolder="$(DvInstallDir)\Mods\Multiplayer\" SkipUnchangedFiles="true" />
   </Target>
 </Project>

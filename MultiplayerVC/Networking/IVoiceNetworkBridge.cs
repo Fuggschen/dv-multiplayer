@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace MultiplayerVC.Networking
 {
@@ -9,22 +8,13 @@ namespace MultiplayerVC.Networking
         // True if this node is the authoritative server/host.
         bool IsServer { get; }
 
-        // Local unique id (e.g., SteamID or netId) to tag outgoing frames.
-        ulong SelfId { get; }
+        // Local MPAPI player ID to tag outgoing frames.
+        byte SelfId { get; }
 
-        // Client -> Server
-        void SendClientToServer(byte[] payload);
+        // Send from Sender to all recipients.
+        void SendToAll(byte[] payload);
 
-        // Server -> Client (targeted send to one peer)
-        void SendServerToClient(ulong targetPeerId, byte[] payload);
-
-        // Server -> Clients (broadcast with optional exclusions)
-        void SendServerToClients(IEnumerable<ulong> targetPeerIds, byte[] payload);
-
-        // Raised when a client payload arrives at server.
-        event Action<ulong /*fromPeerId*/, byte[] /*payload*/> OnClientPayload;
-
-        // Raised when a server payload arrives at client.
-        event Action<ulong /*fromPeerId*/, byte[] /*payload*/> OnServerPayload;
+        // Raised when a payload arrives at client.
+        event Action<byte, byte[]> OnPayload;
     }
 }

@@ -13,10 +13,10 @@ namespace MultiplayerVC.Voice
         public VoiceCaptureBehaviour? Capture;
         public VoicePlaybackBehaviour? Playback;
 
-        public void Initialize(IVoiceNetworkBridge bridge, IProximityProvider? proximity = null, IMuteProvider? mute = null)
+        public void Initialize(IVoiceNetworkBridge bridge, IMuteProvider? mute = null)
         {
-            Debug.Log($"[VC] VoiceBootstrap.Initialize: bridge.IsServer={bridge.IsServer}, proximity={(proximity?.GetType().Name ?? "null")}, mute={(mute?.GetType().Name ?? "null")}");
-            var transport = new BridgeVoiceTransport(bridge, proximity, mute);
+            Debug.Log($"[VC] VoiceBootstrap.Initialize: IsServer={bridge.IsServer}, mute={(mute?.GetType().Name ?? "null")}");
+            var transport = new BridgeVoiceTransport(bridge, mute);
 
             if (Capture == null)
             {
@@ -29,8 +29,6 @@ namespace MultiplayerVC.Voice
                 Playback = gameObject.AddComponent<VoicePlaybackBehaviour>();
             }
 
-            // disable capture loopback when bridged
-            Capture.loopback = false;
             Capture.Transport = transport;
             Playback.Transport = transport;
             Debug.Log("[VC] VoiceBootstrap.Initialize completed: capture and playback bound to transport");
@@ -91,7 +89,7 @@ namespace MultiplayerVC.Voice
             IMuteProvider mute = new LocalMuteProvider();
 
             var bridge = new MpApiVoiceBridge();
-            bootstrap.Initialize(bridge, null, mute);
+            bootstrap.Initialize(bridge, mute);
         }
     }
     // Auto-initialize VoiceRuntime after scene load if not already initialized by the host mod.

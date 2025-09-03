@@ -17,9 +17,6 @@ namespace MultiplayerVC.Voice
         public int sampleRate = OpusEncoderWrapper.DefaultSampleRate;
         public int frameMs = OpusEncoderWrapper.DefaultFrameMs;
 
-        [Header("Debug")]
-        public bool loopback = true;
-
         public IVoiceTransport? Transport { get; set; }
 
         // Exposed voice telemetry
@@ -29,12 +26,10 @@ namespace MultiplayerVC.Voice
         private AudioClip? _micClip;
         private string _deviceName = string.Empty;
         private int _micReadPos;
-    private float[] _readBuffer = Array.Empty<float>(); // interleaved if _micChannels > 1
-    private float[] _monoBuffer = Array.Empty<float>();  // mono downmixed for encoding
+        private float[] _readBuffer = Array.Empty<float>();
         private byte[] _encodeBuffer = Array.Empty<byte>();
         private OpusEncoderWrapper? _encoder;
         private int _frameSamples;
-    private int _micChannels = 1;
         private float _rms;
 
         // spam guards for missing deps
@@ -45,8 +40,7 @@ namespace MultiplayerVC.Voice
         void Start()
         {
             _frameSamples = sampleRate * frameMs / 1000;
-            _readBuffer = new float[_frameSamples]; // will be resized after mic starts
-            _monoBuffer = new float[_frameSamples];
+            _readBuffer = new float[_frameSamples];
             _encodeBuffer = new byte[4000]; // safe for 20ms mono opus
 
             // Log Concentus assembly info for diagnostics
@@ -83,11 +77,7 @@ namespace MultiplayerVC.Voice
 
             // Start with default device (first available) if any
             SelectAndStartDevice(null);
-            if (Transport == null && loopback)
-            {
-                Debug.Log("[VC] Capture: No transport assigned; enabling local loopback for diagnostics");
-                Transport = new LoopbackTransport();
-            }
+            
         }
 
         void OnDestroy()
@@ -139,50 +129,21 @@ namespace MultiplayerVC.Voice
 
             while (samplesAvailable >= _frameSamples)
             {
-                // Ensure buffers sized for current device channels
-                if (_readBuffer.Length != _frameSamples * _micChannels)
-                {
-                    _readBuffer = new float[_frameSamples * _micChannels];
-                }
-                if (_monoBuffer.Length != _frameSamples)
-                {
-                    _monoBuffer = new float[_frameSamples];
-                }
-
                 _micClip.GetData(_readBuffer, _micReadPos);
 
                 // Apply gain and compute RMS
                 _rms = 0f;
-                if (_micChannels == 1)
+                for (int i = 0; i < _frameSamples; i++)
                 {
-                    for (int i = 0; i < _frameSamples; i++)
-                    {
-                        float s = _readBuffer[i] * inputGain;
-                        s = Mathf.Clamp(s, -1f, 1f);
-                        _monoBuffer[i] = s;
-                        _rms += s * s;
-                    }
-                }
-                else
-                {
-                    // Downmix interleaved multi-channel input to mono (average channels)
-                    for (int i = 0; i < _frameSamples; i++)
-                    {
-                        float sum = 0f;
-                        int baseIdx = i * _micChannels;
-                        for (int c = 0; c < _micChannels; c++)
-                            sum += _readBuffer[baseIdx + c];
-                        float s = (sum / _micChannels) * inputGain;
-                        s = Mathf.Clamp(s, -1f, 1f);
-                        _monoBuffer[i] = s;
-                        _rms += s * s;
-                    }
+                    float s = _readBuffer[i] * inputGain;
+                    _readBuffer[i] = Mathf.Clamp(s, -1f, 1f);
+                    _rms += _readBuffer[i] * _readBuffer[i];
                 }
                 _rms = Mathf.Sqrt(_rms / _frameSamples);
 
                 if (shouldSend)
                 {
-                    int len = _encoder.Encode(_monoBuffer, 0, _encodeBuffer, 0, _frameSamples);
+                    int len = _encoder.Encode(_readBuffer, 0, _encodeBuffer, 0, _frameSamples);
                     if (len > 0)
                     {
                         var payload = new byte[len];
@@ -193,7 +154,6 @@ namespace MultiplayerVC.Voice
                             Channels = 1,
                             SampleRate = sampleRate,
                             Payload = payload,
-                            InputRms = _rms,
                         };
                         Transport.SendVoiceFrame(frame);
                     }
@@ -210,7 +170,7 @@ namespace MultiplayerVC.Voice
             return db >= vadThresholdDb;
         }
 
-    public void SetDevice(string deviceName)
+    public void SetDevice(string? deviceName)
         {
             SelectAndStartDevice(deviceName);
         }
@@ -251,9 +211,6 @@ namespace MultiplayerVC.Voice
                 {
                     _micClip = Microphone.Start(_deviceName, true, 1, sampleRate);
                     _micReadPos = 0;
-                    _micChannels = Mathf.Max(1, _micClip.channels);
-                    _readBuffer = new float[_frameSamples * _micChannels];
-                    _monoBuffer = new float[_frameSamples];
                     Debug.Log($"[VC] Capture: Started microphone '{_deviceName}' at {sampleRate} Hz");
                 }
                 catch (Exception ex)

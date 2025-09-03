@@ -1,108 +1,138 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using MPAPI.Interfaces;
 using MPAPI.Interfaces.Packets;
 using UnityEngine;
+using MPAPI;
 
 namespace MultiplayerVC.Networking
 {
-    // Packet type for raw voice payload forwarding (manual serialization)
-    internal sealed class VoicePayloadPacket : ISerializablePacket
+    // Voice payload packet for MultiplayerVC (MPAPI compatible)
+    public sealed class VoicePayloadPacket : ISerializablePacket
     {
-        public byte[]? Data = Array.Empty<byte>();
+        public byte SenderId;
+        public byte[] Data = Array.Empty<byte>();
 
         public void Serialize(BinaryWriter writer)
         {
-            if (Data == null) return;
-            writer.Write(Data.Length);
-            writer.Write(Data);
+            writer.Write(SenderId);
+            int len = Data?.Length ?? 0;
+            writer.Write(len);
+            if (len > 0)
+                writer.Write(Data);
         }
 
         public void Deserialize(BinaryReader reader)
         {
+            SenderId = reader.ReadByte();
             int len = reader.ReadInt32();
-            if (len < 0 || len > 1_000_000) { Data = Array.Empty<byte>(); return; }
+            if (len is < 0 or > 1_000_000)
+            {
+                Data = Array.Empty<byte>();
+                return;
+            }
             Data = reader.ReadBytes(len);
         }
     }
 
-    // Concrete bridge using the public MultiplayerAPI (no edits to main mod required)
-    public sealed class MpApiVoiceBridge : IVoiceNetworkBridge, IDisposable
+    // Simple bridge using only MPAPI
+    public sealed class MpApiVoiceBridge : IVoiceNetworkBridge
     {
-        public bool IsServer => MPAPI.MultiplayerAPI.Server != null;
-        public ulong SelfId
+        public bool IsServer => MultiplayerAPI.Server != null;
+        public bool IsClient => MultiplayerAPI.Client != null;
+        public byte SelfId
         {
             get
             {
-                var client = MPAPI.MultiplayerAPI.Client;
-                if (client != null)
-                {
-                    // There is no explicit "self player" accessor; we use Id=0 which is typically reserved for self in this mod.
-                    var p = client.GetPlayer(0);
-                    if (p != null) return p.Id;
-                }
-                return 0;
+                var client = MultiplayerAPI.Client;
+                var senderID = client.PlayerId;
+                return !client.IsConnected ? (byte)0 : senderID;
             }
         }
 
-        public event Action<ulong, byte[]>? OnClientPayload;
-        public event Action<ulong, byte[]>? OnServerPayload;
+        public event Action<byte, byte[]>? OnPayload;
 
-        private readonly IServer? _server;
         private readonly IClient? _client;
+        private readonly IServer? _server;
 
         public MpApiVoiceBridge()
         {
-            _server = MPAPI.MultiplayerAPI.Server;
-            _client = MPAPI.MultiplayerAPI.Client;
-            Debug.Log($"[VC] VoiceBridge: created (IsServer={IsServer})");
+            _client = MultiplayerAPI.Client;
+            _server = MultiplayerAPI.Server;
+            Debug.Log($"[VC] VoiceBridge: created (IsServer={IsServer}, IsClient={IsClient})");
 
-            _server?.RegisterSerializablePacket<VoicePayloadPacket>((packet, sender) =>
-            {
-                Debug.Log($"[VC] VoiceBridge(Server): received client payload {packet.Data?.Length ?? 0} bytes from {sender.Id}");
-                if (packet.Data != null) OnClientPayload?.Invoke(sender.Id, packet.Data);
-            });
-
-            _client?.RegisterSerializablePacket<VoicePayloadPacket>(packet =>
-            {
-                Debug.Log($"[VC] VoiceBridge(Client): received server payload {packet.Data?.Length ?? 0} bytes");
-                // Sender is embedded in payload by serializer; the bridge will extract it downstream
-                if (packet.Data != null) OnServerPayload?.Invoke(0, packet.Data);
-            });
+            // Register voice packet handlers via MPAPI only
+            RegisterVoicePackets();
         }
 
-        public void Dispose()
+        private void RegisterVoicePackets()
         {
-            // API does not expose unregister; rely on lifecycle disposal
-        }
-
-        public void SendClientToServer(byte[] payload)
-        {
-            Debug.Log($"[VC] VoiceBridge(Client): send {payload?.Length ?? 0} bytes to server");
-            _client?.SendSerializablePacketToServer(new VoicePayloadPacket { Data = payload }, reliable: false);
-        }
-
-        public void SendServerToClient(ulong targetPeerId, byte[] payload)
-        {
-            if (_server == null) return;
-            var player = _server.GetPlayer((byte)targetPeerId);
-            if (player != null)
+            if (_client != null)
             {
-                Debug.Log($"[VC] VoiceBridge(Server): send {payload?.Length ?? 0} bytes to {targetPeerId}");
-                _server.SendSerializablePacketToPlayer(new VoicePayloadPacket { Data = payload }, player, reliable: false);
+                Debug.Log($"[VC] VoiceBridge: Registering client VoicePayloadPacket handler via MPAPI RegisterSerializablePacket");
+                _client.RegisterSerializablePacket<VoicePayloadPacket>(packet =>
+                {
+                    Debug.Log($"[VC] VoiceBridge(Client): received voice payload from sender {packet.SenderId}, {packet.Data?.Length ?? 0} bytes");
+                    if (packet.Data is { Length: > 0 }) 
+                        OnPayload?.Invoke(packet.SenderId, packet.Data);
+                });
+            }
+            else
+            {
+                Debug.Log($"[VC] VoiceBridge: No client instance available for RegisterSerializablePacket");
+            }
+
+            if (_server != null)
+            {
+                Debug.Log($"[VC] VoiceBridge: Registering server VoicePayloadPacket handler via MPAPI RegisterSerializablePacket");
+                _server.RegisterSerializablePacket<VoicePayloadPacket>((packet, sender) =>
+                {
+                    var data = packet.Data ?? Array.Empty<byte>();
+                    int len = data.Length;
+                    var senderId = sender?.PlayerId ?? (byte)0;
+                    Debug.Log($"[VC] VoiceBridge(Server): received voice payload {len} bytes from player {senderId}");
+                    if (len == 0) return;
+                    
+                    Debug.Log($"[VC] VoiceBridge(Server): forwarding voice packet to all except sender {senderId}");
+                    var forwardPacket = new VoicePayloadPacket { SenderId = senderId, Data = data };
+                    _server.SendSerializablePacketToAll(forwardPacket, reliable: false, excludePlayer: sender);
+                    
+                    // Notify local server listeners (for local playback if needed)
+                    OnPayload?.Invoke(senderId, data);
+                });
+            }
+            else
+            {
+                Debug.Log($"[VC] VoiceBridge: No server instance available for RegisterSerializablePacket");
             }
         }
 
-        public void SendServerToClients(IEnumerable<ulong> targetPeerIds, byte[] payload)
+        public void SendToAll(byte[] payload)
         {
-            if (_server == null) return;
-            int count = 0;
-            foreach (var id in targetPeerIds) { count++; }
-            Debug.Log($"[VC] VoiceBridge(Server): broadcast {payload?.Length ?? 0} bytes to {count} targets");
-            foreach (var id in targetPeerIds)
+            Debug.Log($"[VC] VoiceBridge: SendToAll called with {payload?.Length ?? 0} bytes, IsServer={IsServer}, IsClient={IsClient}");
+            if (payload == null) return;
+
+            var packet = new VoicePayloadPacket { SenderId = SelfId, Data = payload };
+
+            if (IsServer && IsClient && _server != null)
             {
-                if (payload != null) SendServerToClient(id, payload);
+                // Host case: We are both server and client, directly broadcast to all other clients
+                Debug.Log($"[VC] VoiceBridge: Host sending voice packet directly to all clients (sender {SelfId})");
+                _server.SendSerializablePacketToAll(packet, reliable: false);
+                Debug.Log($"[VC] VoiceBridge: Host voice packet broadcasted to all clients");
+            }
+            else if (_client != null)
+            {
+                // Regular client case: Send to server (server will handle forwarding)
+                Debug.Log($"[VC] VoiceBridge: Client sending voice packet to server (sender {SelfId})");
+                _client.SendSerializablePacketToServer(packet, reliable: false);
+                Debug.Log($"[VC] VoiceBridge: Client voice packet sent to server");
+            }
+            else
+            {
+                Debug.LogWarning($"[VC] VoiceBridge: SendToAll called but no valid client or server instance available");
             }
         }
     }

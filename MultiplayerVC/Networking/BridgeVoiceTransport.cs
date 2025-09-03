@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using MultiplayerVC.Voice;
 using UnityEngine;
+using MPAPI;
+using MPAPI.Interfaces.Packets;
 
 namespace MultiplayerVC.Networking
 {
@@ -11,24 +14,21 @@ namespace MultiplayerVC.Networking
         public event Action<VoiceFrame>? OnVoiceFrame;
 
         private readonly IVoiceNetworkBridge _bridge;
-        private readonly IProximityProvider? _proximity;
         private readonly IMuteProvider? _mute;
         private ushort _seq;
 
-        public BridgeVoiceTransport(IVoiceNetworkBridge bridge, IProximityProvider? proximity = null, IMuteProvider? mute = null)
+        public BridgeVoiceTransport(IVoiceNetworkBridge bridge, IMuteProvider? mute = null)
         {
             _bridge = bridge;
-            _proximity = proximity;
             _mute = mute;
-            _bridge.OnClientPayload += OnClientPayload;
-            _bridge.OnServerPayload += OnServerPayload;
-            Debug.Log($"[VC] BridgeVoiceTransport: created (IsServer={_bridge.IsServer})");
+            _bridge.OnPayload += OnPayload;
+            Debug.Log($"[VC] BridgeVoiceTransport: created (IsServer={_bridge.IsServer}, bridge type={_bridge.GetType().Name})");
+            Debug.Log($"[VC] BridgeVoiceTransport: OnPayload event subscribed to bridge");
         }
 
         public void Dispose()
         {
-            _bridge.OnClientPayload -= OnClientPayload;
-            _bridge.OnServerPayload -= OnServerPayload;
+            _bridge.OnPayload -= OnPayload;
         }
 
         public VoiceTransportStats? Statistics => null;
@@ -38,71 +38,51 @@ namespace MultiplayerVC.Networking
             frame.SenderId = _bridge.SelfId;
             frame.Sequence = ++_seq;
             frame.Timestamp = (uint)Environment.TickCount;
-            var bytes = VoiceFrameSerializer.Serialize(frame);
 
-            if (_bridge.IsServer)
-            {
-                // Broadcast to all connected clients except the speaker; spatialization is handled client-side.
-                var server = MPAPI.MultiplayerAPI.Server;
-                var targetsList = new List<ulong>();
-                if (server != null)
-                {
-                    byte speakerByte = (byte)frame.SenderId;
-                    foreach (var p in server.Players)
-                    {
-                        if (p == null) continue;
-                        if (p.Id == speakerByte) continue;
-                        targetsList.Add(p.Id);
-                    }
-                }
+            // Serialize using MPAPI binary contract
+            using var ms = new MemoryStream();
+            using var bw = new BinaryWriter(ms);
+            frame.Serialize(bw);
+            var bytes = ms.ToArray();
 
-                Debug.Log($"[VC] Transport(Server): broadcasting frame seq={frame.Sequence} to {targetsList.Count} targets (UnitySpatial)");
-                _bridge.SendServerToClients(targetsList, bytes);
-            }
-            else
-            {
-                // Client sends to server; server will rebroadcast
-                Debug.Log($"[VC] Transport(Client): sending frame seq={frame.Sequence} to server");
-                _bridge.SendClientToServer(bytes);
-            }
+            // Broadcast to all connected clients
+            var client = MultiplayerAPI.Client;
+            var targetsList = new List<byte>();
+            if (client?.Players == null) return;
+            targetsList.AddRange(from p in client.Players where p.PlayerId != frame.SenderId select p.PlayerId);
+            Debug.Log($"[VC] Transport(Sender): broadcasting frame seq={frame.Sequence} to {targetsList.Count} targets (sender={frame.SenderId})");
+            _bridge.SendToAll(bytes);
         }
 
-        private void OnClientPayload(ulong fromPeerId, byte[] payload)
-        {
-            // Only server should receive this
-            if (!_bridge.IsServer) return;
-            if (_mute != null && _mute.IsMutedServer(fromPeerId)) { Debug.Log($"[VC] Transport(Server): drop muted client {fromPeerId}"); return; }
-            if (!VoiceFrameSerializer.TryDeserialize(payload, 0, payload.Length, out var frame)) { Debug.LogWarning("[VC] Transport(Server): failed to deserialize client payload"); return; }
-            // Use sender provided by network or embedded in payload; trust fromPeerId if non-zero
-            if (fromPeerId != 0) frame.SenderId = fromPeerId;
 
-            // Rebroadcast to all connected clients except the speaker; spatialization handled client-side.
-            var server = MPAPI.MultiplayerAPI.Server;
-            var targetsList = new List<ulong>();
-            if (server != null)
+        private void OnPayload(byte fromPlayerId, byte[] payload)
+        {
+            Debug.Log($"[VC] Transport(Receiver): OnPayload called with fromPlayerId={fromPlayerId}, payload length={payload?.Length ?? 0}");
+            
+            // Clients receive this from the sender
+            if (_mute != null && _mute.IsMutedLocal(fromPlayerId))
             {
-                byte speakerByte = (byte)fromPeerId;
-                foreach (var p in server.Players)
-                {
-                    if (p == null) continue;
-                    if (p.Id == speakerByte) continue;
-                    targetsList.Add(p.Id);
-                }
+                Debug.Log($"[VC] Transport(Receiver): drop muted remote {fromPlayerId}");
+                return;
             }
 
-            Debug.Log($"[VC] Transport(Server): received frame from {fromPeerId}, rebroadcast to {targetsList.Count} targets (UnitySpatial)");
-            var bytes = VoiceFrameSerializer.Serialize(frame);
-            _bridge.SendServerToClients(targetsList, bytes);
-        }
+            // Deserialize
+            VoiceFrame frame;
+            try
+            {
+                using var ms = new MemoryStream(payload);
+                using var br = new BinaryReader(ms);
+                frame = new VoiceFrame();
+                frame.Deserialize(br);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[VC] Transport(Receiver): failed to deserialize server payload: {ex.Message}");
+                return;
+            }
 
-        private void OnServerPayload(ulong fromPeerId, byte[] payload)
-        {
-            // Clients receive this from the server
-            if (_bridge.IsServer) return;
-            if (_mute != null && _mute.IsMutedLocal(fromPeerId)) { Debug.Log($"[VC] Transport(Client): drop muted remote {fromPeerId}"); return; }
-            if (!VoiceFrameSerializer.TryDeserialize(payload, 0, payload.Length, out var frame)) { Debug.LogWarning("[VC] Transport(Client): failed to deserialize server payload"); return; }
-            if (fromPeerId != 0) frame.SenderId = fromPeerId;
-            Debug.Log($"[VC] Transport(Client): received frame from {frame.SenderId}, seq={frame.Sequence}");
+            if (fromPlayerId != 0) frame.SenderId = fromPlayerId;
+            Debug.Log($"[VC] Transport(Receiver): received frame from {frame.SenderId}, seq={frame.Sequence}");
             OnVoiceFrame?.Invoke(frame);
         }
     }

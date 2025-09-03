@@ -1,6 +1,4 @@
 using System;
-using System.Buffers;
-using Concentus;
 using Concentus.Enums;
 using Concentus.Structs;
 
@@ -19,11 +17,8 @@ namespace MultiplayerVC.Voice
         public OpusEncoderWrapper(int sampleRate = DefaultSampleRate, int channels = 1, int bitrate = 24000)
         {
             _channels = channels;
-            // Concentus 2.x uses constructors (Create(...) removed)
-            _encoder = (OpusEncoder)OpusCodecFactory.CreateEncoder(DefaultSampleRate, 1, OpusApplication.OPUS_APPLICATION_VOIP);
+            _encoder = (OpusEncoder)Concentus.OpusCodecFactory.CreateEncoder(sampleRate, channels, OpusApplication.OPUS_APPLICATION_VOIP);
             _encoder.Bitrate = bitrate; // bits per second
-            _encoder.Complexity = 6;     // reasonable CPU vs quality tradeoff for Unity
-            _encoder.UseVBR = true;      // allow variable bitrate
             _encoder.UseInbandFEC = true;
             _encoder.UseDTX = true;
             _encoder.SignalType = OpusSignal.OPUS_SIGNAL_VOICE;
@@ -45,7 +40,7 @@ namespace MultiplayerVC.Voice
             }
             ReadOnlySpan<short> inputSpan = new ReadOnlySpan<short>(temp);
             Span<byte> outputSpan = new Span<byte>(dst, dstOffset, dst.Length - dstOffset);
-            const int maxDataBytes = 1275;
+            const int maxDataBytes = 1275; // opus spec max per-frame payload size
             return _encoder.Encode(inputSpan, frameSamples, outputSpan, maxDataBytes);
         }
 
@@ -55,26 +50,28 @@ namespace MultiplayerVC.Voice
         }
     }
 
-    public sealed class OpusDecoderWrapper(int sampleRate = OpusEncoderWrapper.DefaultSampleRate, int channels = 1) : IDisposable
+    public sealed class OpusDecoderWrapper : IDisposable
     {
-    private readonly OpusDecoder _decoder = (OpusDecoder)OpusCodecFactory.CreateDecoder(sampleRate, channels);
-    private bool _disposed;
+        private readonly OpusDecoder _decoder;
+        private readonly int _channels;
+        private bool _disposed;
 
-        // Concentus 2.x uses constructors (Create(...) removed)
-        //_decoder = new OpusDecoder(sampleRate, channels);
+        public OpusDecoderWrapper(int sampleRate = OpusEncoderWrapper.DefaultSampleRate, int channels = 1)
+        {
+            _channels = channels;
+            _decoder = (OpusDecoder)Concentus.OpusCodecFactory.CreateDecoder(sampleRate, channels);
+        }
 
         public int Decode(byte[] payload, int payloadOffset, int payloadLength, float[] dstFloat, int dstOffset, int frameSamples)
         {
             if (_disposed) throw new ObjectDisposedException(nameof(OpusDecoderWrapper));
-            int sampleCount = frameSamples * channels;
+            int sampleCount = frameSamples * _channels;
             var temp = new short[sampleCount];
-
             ReadOnlySpan<byte> inputSpan = new ReadOnlySpan<byte>(payload, payloadOffset, payloadLength);
             Span<short> outputSpan = new Span<short>(temp);
             int decoded = _decoder.Decode(inputSpan, outputSpan, frameSamples, false);
-
             // Convert to floats
-            int total = decoded * channels;
+            int total = decoded * _channels;
             for (int i = 0; i < total; i++)
             {
                 dstFloat[dstOffset + i] = temp[i] / (float)short.MaxValue;
