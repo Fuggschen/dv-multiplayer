@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using MPAPI.Interfaces;
 
 namespace MultiplayerVC.Voice
 {
@@ -26,6 +27,8 @@ namespace MultiplayerVC.Voice
             public float[] Ring = new float[OpusEncoderWrapper.DefaultSampleRate]; // 1s
             public int RingWrite;
             public int RingRead;
+            public ulong SenderId;
+            public GameObject? AudioObject;
         }
 
         private readonly Dictionary<ulong, Stream> _streams = new Dictionary<ulong, Stream>();
@@ -43,12 +46,28 @@ namespace MultiplayerVC.Voice
             }
         }
 
+        void Update()
+        {
+            // Update AudioSource positions to follow players
+            foreach (var stream in _streams.Values)
+            {
+                if (stream.AudioObject != null)
+                {
+                    UpdateAudioSourcePosition(stream);
+                }
+            }
+        }
+
         void OnDestroy()
         {
             if (Transport != null)
                 Transport.OnVoiceFrame -= OnVoiceFrame;
             foreach (var s in _streams.Values)
+            {
                 s.Decoder.Dispose();
+                if (s.AudioObject != null)
+                    Destroy(s.AudioObject);
+            }
             _streams.Clear();
         }
 
@@ -59,8 +78,11 @@ namespace MultiplayerVC.Voice
             {
                 Debug.Log($"[VC] Playback: creating audio stream for sender {frame.SenderId}");
                 stream = new Stream();
+                stream.SenderId = frame.SenderId;
+
+                // Create AudioSource object
                 var go = new GameObject($"VC_Speaker_{frame.SenderId}");
-                go.transform.SetParent(transform, false);
+                stream.AudioObject = go;
                 var src = go.AddComponent<AudioSource>();
                 src.spatialBlend = spatialBlend;
                 src.maxDistance = maxDistance;
@@ -68,8 +90,14 @@ namespace MultiplayerVC.Voice
                 src.playOnAwake = true;
                 src.volume = volume;
                 stream.Audio = src;
+
+                // Create AudioClip and start playback
                 stream.Clip = AudioClip.Create($"VC_Clip_{frame.SenderId}", OpusEncoderWrapper.DefaultSampleRate, 1, OpusEncoderWrapper.DefaultSampleRate, true, data => OnAudioRead(stream, data));
                 src.clip = stream.Clip;
+
+                // Position the AudioSource at the player's location
+                UpdateAudioSourcePosition(stream);
+
                 src.Play();
                 _streams[frame.SenderId] = stream;
             }
@@ -87,18 +115,37 @@ namespace MultiplayerVC.Voice
             {
                 var frame = stream.Queue.Dequeue();
                 int decoded = 0;
+
+                switch (frame.Payload.Length)
+                {
+                    // Validate frame data before decoding
+                    case <= 1:
+                        Debug.LogWarning($"[VC] Playback: skipping empty payload from sender {frame.SenderId}");
+                        continue;
+                    // Reasonable max for Opus frame (~4KB)
+                    case > 4000:
+                        Debug.LogWarning($"[VC] Playback: skipping oversized payload ({frame.Payload.Length} bytes) from sender {frame.SenderId}");
+                        continue;
+                }
+
                 try
                 {
                     decoded = stream.Decoder.Decode(frame.Payload, 0, frame.Payload.Length, stream.Pcm, 0, OpusEncoderWrapper.DefaultFrameSamples);
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[VC] Playback: decode error for sender {frame.SenderId}: {ex.Message}");
+                    Debug.LogWarning($"[VC] Playback: decode error for sender {frame.SenderId}, payload length {frame.Payload.Length}: {ex.Message}");
+                    continue; // Skip this frame and continue with next
                 }
+
                 if (decoded > 0)
                 {
                     WriteRing(stream, stream.Pcm, decoded);
                     stream.LastSeq = frame.Sequence;
+                }
+                else
+                {
+                    Debug.LogWarning($"[VC] Playback: decoder returned {decoded} samples for sender {frame.SenderId}");
                 }
             }
 
@@ -138,6 +185,31 @@ namespace MultiplayerVC.Voice
             {
                 s.Ring[s.RingWrite] = src[i];
                 s.RingWrite = (s.RingWrite + 1) % s.Ring.Length;
+            }
+        }
+
+        private void UpdateAudioSourcePosition(Stream stream)
+        {
+            if (stream.AudioObject == null) return;
+
+            var playerId = (byte)stream.SenderId;
+
+            // Get Player position from MPAPI
+            try
+            {
+                var player = MPAPI.MultiplayerAPI.Client?.GetPlayer(playerId);
+
+                if (player != null)
+                {
+                    // Position the AudioSource at the player's location
+                    stream.AudioObject.transform.position = player.Position;
+                    return;
+                }
+            }
+            catch
+            {
+                // Silently handle API errors to avoid log spam
+                // Could log with Debug.LogWarning if needed for debugging
             }
         }
     }
