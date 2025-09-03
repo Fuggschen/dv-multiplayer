@@ -45,13 +45,11 @@ namespace MultiplayerVC.Voice
         public static void EnsureSubscribed()
         {
             if (s_subscribed) return;
-
-            MPAPI.MultiplayerAPI.ServerStarted += OnServerStarted;
             MPAPI.MultiplayerAPI.ClientStarted += OnClientStarted;
             s_subscribed = true;
             Debug.Log("[Info] VoiceRuntime: subscribed to MPAPI events");
             // If already connected before we subscribed, initialize immediately.
-            if (!s_initialized && (MPAPI.MultiplayerAPI.Server != null || MPAPI.MultiplayerAPI.Client != null))
+            if (!s_initialized && MPAPI.MultiplayerAPI.Client != null)
             {
                 InitializeRuntime();
             }
@@ -60,14 +58,8 @@ namespace MultiplayerVC.Voice
         public static void Unsubscribe()
         {
             if (!s_subscribed) return;
-            MPAPI.MultiplayerAPI.ServerStarted -= OnServerStarted;
             MPAPI.MultiplayerAPI.ClientStarted -= OnClientStarted;
             s_subscribed = false;
-        }
-
-        private static void OnServerStarted(IServer _)
-        {
-            if (!s_initialized) InitializeRuntime();
         }
 
         private static void OnClientStarted(IClient _)
