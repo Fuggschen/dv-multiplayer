@@ -75,6 +75,14 @@ namespace MultiplayerVC.Networking
                 _client.RegisterSerializablePacket<VoicePayloadPacket>(packet =>
                 {
                     Debug.Log($"[VC] VoiceBridge(Client): received voice payload from sender {packet.SenderId}, {packet.Data?.Length ?? 0} bytes");
+
+                    // Filter out packets from ourselves to prevent loopback
+                    if (packet.SenderId == SelfId)
+                    {
+                        Debug.Log($"[VC] VoiceBridge(Client): Ignoring voice packet from self (ID {SelfId})");
+                        return;
+                    }
+
                     if (packet.Data is { Length: > 0 })
                         OnPayload?.Invoke(packet.SenderId, packet.Data);
                 });
@@ -118,11 +126,11 @@ namespace MultiplayerVC.Networking
 
             if (IsServer && IsClient && _server != null)
             {
-                // Get ID so we don't send to ourselves'
+                // Get ID so we don't send to ourselves
                 var sender = _server.GetPlayer(SelfId);
                 // Host case: We are both server and client, directly broadcast to all other clients
                 Debug.Log($"[VC] VoiceBridge: Host sending voice packet directly to all clients (sender {SelfId})");
-                _server.SendSerializablePacketToAll(packet, reliable: false, sender);
+                _server.SendSerializablePacketToAll(packet, reliable: false, excludePlayer: sender);
                 Debug.Log($"[VC] VoiceBridge: Host voice packet broadcasted to all clients");
             }
             else if (_client != null)
