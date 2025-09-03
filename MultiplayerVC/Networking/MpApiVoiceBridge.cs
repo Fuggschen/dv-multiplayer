@@ -75,7 +75,7 @@ namespace MultiplayerVC.Networking
                 _client.RegisterSerializablePacket<VoicePayloadPacket>(packet =>
                 {
                     Debug.Log($"[VC] VoiceBridge(Client): received voice payload from sender {packet.SenderId}, {packet.Data?.Length ?? 0} bytes");
-                    if (packet.Data is { Length: > 0 }) 
+                    if (packet.Data is { Length: > 0 })
                         OnPayload?.Invoke(packet.SenderId, packet.Data);
                 });
             }
@@ -94,11 +94,11 @@ namespace MultiplayerVC.Networking
                     var senderId = sender?.PlayerId ?? (byte)0;
                     Debug.Log($"[VC] VoiceBridge(Server): received voice payload {len} bytes from player {senderId}");
                     if (len == 0) return;
-                    
+
                     Debug.Log($"[VC] VoiceBridge(Server): forwarding voice packet to all except sender {senderId}");
                     var forwardPacket = new VoicePayloadPacket { SenderId = senderId, Data = data };
                     _server.SendSerializablePacketToAll(forwardPacket, reliable: false, excludePlayer: sender);
-                    
+
                     // Notify local server listeners (for local playback if needed)
                     OnPayload?.Invoke(senderId, data);
                 });
@@ -118,9 +118,11 @@ namespace MultiplayerVC.Networking
 
             if (IsServer && IsClient && _server != null)
             {
+                // Get ID so we don't send to ourselves'
+                var sender = _server.GetPlayer(SelfId);
                 // Host case: We are both server and client, directly broadcast to all other clients
                 Debug.Log($"[VC] VoiceBridge: Host sending voice packet directly to all clients (sender {SelfId})");
-                _server.SendSerializablePacketToAll(packet, reliable: false);
+                _server.SendSerializablePacketToAll(packet, reliable: false, sender);
                 Debug.Log($"[VC] VoiceBridge: Host voice packet broadcasted to all clients");
             }
             else if (_client != null)
