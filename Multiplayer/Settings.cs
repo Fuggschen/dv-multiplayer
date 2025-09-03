@@ -16,7 +16,6 @@ public class Settings : UnityModManager.ModSettings, IDrawable
     public const byte MAX_USERNAME_LENGTH = 24;
 
     public static Action<Settings> OnSettingsUpdated;
-    public static Action<Settings> OnVoiceSettingsUpdated;
 
     public int SettingsVer = CURRENT_VERSION;
 
@@ -156,7 +155,6 @@ public class Settings : UnityModManager.ModSettings, IDrawable
             if (changed)
             {
                 VoiceDeviceName = idx == 0 ? string.Empty : display[idx];
-                OnVoiceSettingsUpdated?.Invoke(this);
             }
             if (devices.Length == 0)
             {
@@ -178,8 +176,6 @@ public class Settings : UnityModManager.ModSettings, IDrawable
 
         if (!UnloadWatcher.isQuitting)
             OnSettingsUpdated?.Invoke(this);
-        if (VoiceEnabled)
-            OnVoiceSettingsUpdated?.Invoke(this);
         Save(this, modEntry);
     }
 
