@@ -11,7 +11,7 @@ namespace MultiplayerVC.Voice
         public KeyCode pushToTalk = KeyCode.V;
         public bool openMic = false;
         [Range(-80, 0)] public float vadThresholdDb = -45f;
-        [Range(0.5f, 2f)] public float inputGain = 1.0f;
+        [Range(0.5f, 5f)] public float inputGain = 1.0f;
 
         [Header("Codec")]
         public int sampleRate = OpusEncoderWrapper.DefaultSampleRate;
@@ -31,6 +31,8 @@ namespace MultiplayerVC.Voice
         private OpusEncoderWrapper? _encoder;
         private int _frameSamples;
         private float _rms;
+        private float _smoothedDb = -100f; // Smoothed decibel value for voice activity detection
+        private const float _vadSmoothingFactor = 0.3f; // How quickly the smoothed level adapts to new levels
 
         // spam guards for missing deps
         private bool _warnedNoMic;
@@ -77,7 +79,7 @@ namespace MultiplayerVC.Voice
 
             // Start with default device (first available) if any
             SelectAndStartDevice(null);
-            
+
         }
 
         void OnDestroy()
@@ -119,13 +121,12 @@ namespace MultiplayerVC.Voice
                 IsSending = false; return;
             }
 
-            bool shouldSend = openMic ? IsAboveThreshold() : Input.GetKey(pushToTalk);
-            // reflect transmit intent immediately for UI responsiveness
-            IsSending = shouldSend;
-
             int micPos = Microphone.GetPosition(_deviceName);
             int samplesAvailable = micPos - _micReadPos;
             if (samplesAvailable < 0) samplesAvailable += _micClip.samples;
+
+            // Default to not sending
+            bool shouldSend = false;
 
             while (samplesAvailable >= _frameSamples)
             {
@@ -140,6 +141,19 @@ namespace MultiplayerVC.Voice
                     _rms += _readBuffer[i] * _readBuffer[i];
                 }
                 _rms = Mathf.Sqrt(_rms / _frameSamples);
+
+                // Now make the send decision with current frame's RMS
+                shouldSend = openMic ? IsAboveThreshold() : Input.GetKey(pushToTalk);
+
+                // Debug logging for open mic issues
+                if (openMic && !shouldSend)
+                {
+                    float db = 20f * Mathf.Log10(_rms + 1e-7f);
+                    if (db > vadThresholdDb - 10f) // Only log when close to threshold to avoid spam
+                    {
+                        Debug.Log($"[VC] Capture: OpenMic RMS={_rms:F6}, dB={db:F1}, threshold={vadThresholdDb:F1}, sending={shouldSend}");
+                    }
+                }
 
                 if (shouldSend)
                 {
@@ -156,18 +170,43 @@ namespace MultiplayerVC.Voice
                             Payload = payload,
                         };
                         Transport.SendVoiceFrame(frame);
+
+                        // Log successful transmission for debugging
+                        if (openMic)
+                        {
+                            float db = 20f * Mathf.Log10(_rms + 1e-7f);
+                            Debug.Log($"[VC] Capture: OpenMic SENDING frame, RMS={_rms:F6}, dB={db:F1}, len={len}");
+                        }
                     }
                 }
 
                 _micReadPos = (_micReadPos + _frameSamples) % _micClip.samples;
                 samplesAvailable -= _frameSamples;
             }
+
+            // Reflect transmit intent for UI responsiveness
+            IsSending = shouldSend;
         }
 
         private bool IsAboveThreshold()
         {
-            float db = 20f * Mathf.Log10(_rms + 1e-7f);
-            return db >= vadThresholdDb;
+            // Calculate current dB level
+            float currentDb = 20f * Mathf.Log10(_rms + 1e-7f);
+
+            // Apply smoothing to the dB value for more stable voice detection
+            _smoothedDb = Mathf.Lerp(_smoothedDb, currentDb, _vadSmoothingFactor);
+
+            // Hysteresis: add a small bonus when already above threshold to prevent rapid on/off switching
+            float hysteresisBonus = _smoothedDb >= vadThresholdDb ? 3f : 0f;
+            bool isAbove = _smoothedDb >= (vadThresholdDb - hysteresisBonus);
+
+            // Log threshold checks at regular intervals for debugging
+            if (Time.frameCount % 60 == 0)
+            {
+                Debug.Log($"[VC] Capture: VAD check: RMS={_rms:F6}, current dB={currentDb:F1}, smoothed dB={_smoothedDb:F1}, threshold={vadThresholdDb:F1}, above={isAbove}");
+            }
+
+            return isAbove;
         }
 
     public void SetDevice(string? deviceName)
