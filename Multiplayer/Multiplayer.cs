@@ -28,6 +28,7 @@ public static class Multiplayer
     public static UnityModManager.ModEntry ModEntry;
     public static Settings Settings;
     private static APIProvider _apiProvider;
+    private static Components.Voice.MultiplayerVoiceSettings _voiceSettings;
 
     private static AssetBundle assetBundle;
     public static AssetIndex AssetIndex { get; private set; }
@@ -120,6 +121,11 @@ public static class Multiplayer
 
             Log("Loading Voice...");
             VoiceEntrypoint.Initialize();
+            
+            // Set up voice settings bridge
+            Log("Setting up Voice Settings...");
+            _voiceSettings = new Components.Voice.MultiplayerVoiceSettings();
+            VoiceEntrypoint.SetSettingsProvider(_voiceSettings);
         }
         catch (Exception ex)
         {

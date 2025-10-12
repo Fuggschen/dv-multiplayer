@@ -2,6 +2,8 @@ using System.Collections;
 using UnityEngine;
 using MultiplayerVC.Networking;
 using MPAPI.Interfaces;
+using UnityModManagerNet;
+using System.Runtime.InteropServices;
 
 namespace MultiplayerVC.Voice
 {
@@ -12,26 +14,43 @@ namespace MultiplayerVC.Voice
         [Header("Attach or create components")]
         public VoiceCaptureBehaviour? Capture;
         public VoicePlaybackBehaviour? Playback;
+        public VoiceSettingsBridge? SettingsBridge;
 
-        public void Initialize(IVoiceNetworkBridge bridge, IMuteProvider? mute = null)
+        public void Initialize(IVoiceNetworkBridge bridge, IMuteProvider? mute = null, IVoiceSettings? settings = null)
         {
-            Debug.Log($"[VC] VoiceBootstrap.Initialize: IsServer={bridge.IsServer}, mute={(mute?.GetType().Name ?? "null")}");
+            Logger.Log($"[VC] VoiceBootstrap.Initialize: IsServer={bridge.IsServer}, mute={(mute?.GetType().Name ?? "null")}, settings={(settings?.GetType().Name ?? "null")}");
             var transport = new BridgeVoiceTransport(bridge, mute);
 
             if (Capture == null)
             {
-                Debug.Log("[VC] Adding VoiceCaptureBehaviour to GameObject");
+                Logger.Log("[VC] Adding VoiceCaptureBehaviour to GameObject");
                 Capture = gameObject.AddComponent<VoiceCaptureBehaviour>();
             }
             if (Playback == null)
             {
-                Debug.Log("[VC] Adding VoicePlaybackBehaviour to GameObject");
+                Logger.Log("[VC] Adding VoicePlaybackBehaviour to GameObject");
                 Playback = gameObject.AddComponent<VoicePlaybackBehaviour>();
+            }
+            if (SettingsBridge == null)
+            {
+                Logger.Log("[VC] Adding VoiceSettingsBridge to GameObject");
+                SettingsBridge = gameObject.AddComponent<VoiceSettingsBridge>();
             }
 
             Capture.Transport = transport;
             Playback.Transport = transport;
-            Debug.Log("[VC] VoiceBootstrap.Initialize completed: capture and playback bound to transport");
+
+            // Connect settings bridge to voice components
+            SettingsBridge.Capture = Capture;
+            SettingsBridge.Playback = Playback;
+
+            // Apply settings if provided
+            if (settings != null)
+            {
+                SettingsBridge.SetSettingsProvider(settings);
+            }
+
+            Logger.Log("[VC] VoiceBootstrap.Initialize completed: capture and playback bound to transport, settings bridge configured");
         }
     }
 
@@ -40,6 +59,9 @@ namespace MultiplayerVC.Voice
     {
         private static bool s_subscribed;
         private static bool s_initialized;
+        private static VoiceBootstrap? s_bootstrap;
+
+        public static bool IsInitialized => s_initialized;
 
         // Ensures we subscribe to MPAPI events once and initialize immediately if already active.
         public static void EnsureSubscribed()
@@ -47,7 +69,7 @@ namespace MultiplayerVC.Voice
             if (s_subscribed) return;
             MPAPI.MultiplayerAPI.ClientStarted += OnClientStarted;
             s_subscribed = true;
-            Debug.Log("[Info] VoiceRuntime: subscribed to MPAPI events");
+            Logger.Log("[Info] VoiceRuntime: subscribed to MPAPI events");
             // If already connected before we subscribed, initialize immediately.
             if (!s_initialized && MPAPI.MultiplayerAPI.Client != null)
             {
@@ -62,6 +84,14 @@ namespace MultiplayerVC.Voice
             s_subscribed = false;
         }
 
+        public static void ApplySettings(IVoiceSettings? settings)
+        {
+            if (s_bootstrap?.SettingsBridge != null)
+            {
+                s_bootstrap.SettingsBridge.SetSettingsProvider(settings);
+            }
+        }
+
         private static void OnClientStarted(IClient _)
         {
             if (!s_initialized) InitializeRuntime();
@@ -70,18 +100,22 @@ namespace MultiplayerVC.Voice
         private static void InitializeRuntime()
         {
             s_initialized = true;
-            Debug.Log("[VC] VoiceRuntime: initializing voice via MPAPI");
+            Logger.Log("[VC] VoiceRuntime: initializing voice via MPAPI");
 
             var root = new GameObject("[VC] Runtime");
             Object.DontDestroyOnLoad(root);
 
-            var bootstrap = root.AddComponent<VoiceBootstrap>();
+            s_bootstrap = root.AddComponent<VoiceBootstrap>();
 
             // No proximity provider; broadcast to all clients and let Unity handle spatialization.
             IMuteProvider mute = new LocalMuteProvider();
 
             var bridge = new MpApiVoiceBridge();
-            bootstrap.Initialize(bridge, mute);
+
+            // Get settings from entrypoint
+            var settings = VoiceEntrypoint.GetSettingsProvider();
+
+            s_bootstrap.Initialize(bridge, mute, settings);
         }
     }
     // Auto-initialize VoiceRuntime after scene load if not already initialized by the host mod.
@@ -97,7 +131,7 @@ namespace MultiplayerVC.Voice
             Object.DontDestroyOnLoad(go);
             go.AddComponent<VoiceAutoInitializer>();
             s_spawned = true;
-            Debug.Log("[VC] AutoInitializer: created bootstrapper");
+            Logger.Log("[VC] AutoInitializer: created bootstrapper");
         }
 
         private void OnEnable()
@@ -114,10 +148,34 @@ namespace MultiplayerVC.Voice
     // Public entrypoint for explicit initialization from the host mod.
     public static class VoiceEntrypoint
     {
+        private static IVoiceSettings? _settingsProvider;
+
         // Call this from Multiplayer.cs after registering the MPAPI provider.
         public static void Initialize()
         {
             VoiceRuntime.EnsureSubscribed();
+        }
+
+        // Call this to provide a settings provider for voice chat
+        public static void SetSettingsProvider(IVoiceSettings? settings)
+        {
+            _settingsProvider = settings;
+            // If runtime is already initialized, apply settings immediately
+            if (VoiceRuntime.IsInitialized)
+            {
+                VoiceRuntime.ApplySettings(settings);
+            }
+        }
+
+        internal static IVoiceSettings? GetSettingsProvider()
+        {
+            return _settingsProvider;
+        }
+    }
+
+    public static class Logger {
+        public static void Log(string message) {
+            UnityModManager.Logger.Log(message);
         }
     }
 }
