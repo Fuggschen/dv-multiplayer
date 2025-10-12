@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using MPAPI.Interfaces;
+using System.Collections.Concurrent;
+using UnityEngine.Audio;
 
 namespace MultiplayerVC.Voice
 {
@@ -12,12 +14,13 @@ namespace MultiplayerVC.Voice
         [Range(0f, 1f)] public float spatialBlend = 1f;
         [Range(0f, 50f)] public float maxDistance = 25f;
         public int jitterBufferMs = 80;
+        public AudioMixerGroup? voiceMixerGroup; // Optional routing for all voice AudioSources
 
         public IVoiceTransport? Transport { get; set; }
 
         private class Stream
         {
-            public readonly Queue<VoiceFrame> Queue = new Queue<VoiceFrame>(64);
+            public readonly ConcurrentQueue<VoiceFrame> Queue = new ConcurrentQueue<VoiceFrame>();
             public readonly OpusDecoderWrapper Decoder = new OpusDecoderWrapper();
             public float[] Pcm = new float[OpusEncoderWrapper.DefaultFrameSamples];
             public float JitterTimer;
@@ -37,12 +40,12 @@ namespace MultiplayerVC.Voice
         {
             if (Transport != null)
             {
-                Debug.Log("[VC] Playback: subscribing to transport OnVoiceFrame");
+                Logger.Log("[VC] Playback: subscribing to transport OnVoiceFrame");
                 Transport.OnVoiceFrame += OnVoiceFrame;
             }
             else
             {
-                Debug.LogWarning("[VC] Playback: no transport assigned; cannot receive audio");
+                Logger.Log("[VC] Playback: no transport assigned; cannot receive audio");
             }
         }
 
@@ -76,7 +79,7 @@ namespace MultiplayerVC.Voice
             if (frame.Codec != VoiceCodecId.Opus) return;
             if (!_streams.TryGetValue(frame.SenderId, out var stream))
             {
-                Debug.Log($"[VC] Playback: creating audio stream for sender {frame.SenderId}");
+                Logger.Log($"[VC] Playback: creating audio stream for sender {frame.SenderId}");
                 stream = new Stream();
                 stream.SenderId = frame.SenderId;
 
@@ -90,6 +93,7 @@ namespace MultiplayerVC.Voice
                 src.loop = true;
                 src.playOnAwake = true;
                 src.volume = volume;
+                if (voiceMixerGroup != null) src.outputAudioMixerGroup = voiceMixerGroup;
                 stream.Audio = src;
 
                 // Create AudioClip and start playback
@@ -102,6 +106,7 @@ namespace MultiplayerVC.Voice
                 src.Play();
                 _streams[frame.SenderId] = stream;
             }
+            // Enqueue thread-safely for the audio thread to decode & play
             stream.Queue.Enqueue(frame);
         }
 
@@ -112,20 +117,19 @@ namespace MultiplayerVC.Voice
 
             // Feed ring buffer from queued compressed frames if ring has space
             // Decode while we have at least one frame worth of space available.
-            while (stream.Queue.Count > 0 && RingAvailable(stream) >= OpusEncoderWrapper.DefaultFrameSamples)
+            while (RingAvailable(stream) >= OpusEncoderWrapper.DefaultFrameSamples && stream.Queue.TryDequeue(out var frame))
             {
-                var frame = stream.Queue.Dequeue();
                 int decoded = 0;
 
                 switch (frame.Payload.Length)
                 {
                     // Validate frame data before decoding
                     case <= 1:
-                        Debug.LogWarning($"[VC] Playback: skipping empty payload from sender {frame.SenderId}");
+                        Logger.Log($"[VC] Playback: skipping empty payload from sender {frame.SenderId}");
                         continue;
                     // Reasonable max for Opus frame (~4KB)
                     case > 4000:
-                        Debug.LogWarning($"[VC] Playback: skipping oversized payload ({frame.Payload.Length} bytes) from sender {frame.SenderId}");
+                        Logger.Log($"[VC] Playback: skipping oversized payload ({frame.Payload.Length} bytes) from sender {frame.SenderId}");
                         continue;
                 }
 
@@ -135,7 +139,7 @@ namespace MultiplayerVC.Voice
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[VC] Playback: decode error for sender {frame.SenderId}, payload length {frame.Payload.Length}: {ex.Message}");
+                    Logger.Log($"[VC] Playback: decode error for sender {frame.SenderId}, payload length {frame.Payload.Length}: {ex.Message}");
                     continue; // Skip this frame and continue with next
                 }
 
@@ -146,7 +150,7 @@ namespace MultiplayerVC.Voice
                 }
                 else
                 {
-                    Debug.LogWarning($"[VC] Playback: decoder returned {decoded} samples for sender {frame.SenderId}");
+                    Logger.Log($"[VC] Playback: decoder returned {decoded} samples for sender {frame.SenderId}");
                 }
             }
 
@@ -160,9 +164,7 @@ namespace MultiplayerVC.Voice
             // Pad if underflow
             if (copied < needed)
             {
-                // This will happen if network starves. It's useful to see in logs, but avoid spamming per-sample.
-                // Uncomment for deep debugging:
-                // Debug.Log("[VC] Playback: audio underflow");
+                Logger.Log("[VC] Playback: audio underflow");
             }
             for (; copied < needed; copied++)
                 data[copied] = 0f;
