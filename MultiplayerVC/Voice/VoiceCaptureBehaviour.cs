@@ -45,36 +45,25 @@ namespace MultiplayerVC.Voice
             _readBuffer = new float[_frameSamples];
             _encodeBuffer = new byte[4000]; // safe for 20ms mono opus
 
-            // Log Concentus assembly info for diagnostics
-            try
-            {
-                var ca = typeof(Concentus.Enums.OpusApplication).Assembly;
-                Debug.Log($"[VC] Capture: Concentus assembly loaded: {ca.FullName}, Location='{SafeLocation(ca)}'");
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[VC] Capture: Could not inspect Concentus assembly: {ex.Message}");
-            }
-
             try
             {
                 _encoder = new OpusEncoderWrapper(sampleRate, 1, 24000);
-                Debug.Log($"[VC] Capture: Opus encoder created (sr={sampleRate}, frameMs={frameMs})");
+                Logger.Log($"[VC] Capture: Opus encoder created (sr={sampleRate}, frameMs={frameMs})");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[VC] Capture: Failed to create Opus encoder: {ex}");
+                Logger.Log($"[VC] Capture: Failed to create Opus encoder: {ex}");
             }
 
             // Log devices
             try
             {
                 var devices = Microphone.devices;
-                Debug.Log($"[VC] Capture: Microphone devices: {(devices != null ? string.Join(", ", devices) : "<none>")}");
+                Logger.Log($"[VC] Capture: Microphone devices: {(devices != null ? string.Join(", ", devices) : "<none>")}");
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[VC] Capture: Failed to enumerate microphones: {ex.Message}");
+                Logger.Log($"[VC] Capture: Failed to enumerate microphones: {ex.Message}");
             }
 
             // Start with default device (first available) if any
@@ -97,7 +86,7 @@ namespace MultiplayerVC.Voice
             {
                 if (!_warnedNoMic)
                 {
-                    Debug.LogWarning("[VC] Capture: No microphone active; voice will not transmit");
+                    Logger.Log("[VC] Capture: No microphone active; voice will not transmit");
                     _warnedNoMic = true;
                 }
                 IsSending = false; return;
@@ -106,7 +95,7 @@ namespace MultiplayerVC.Voice
             {
                 if (!_warnedNoTransport)
                 {
-                    Debug.LogWarning("[VC] Capture: No transport assigned; voice will not be sent");
+                    Logger.Log("[VC] Capture: No transport assigned; voice will not be sent");
                     _warnedNoTransport = true;
                 }
                 IsSending = false; return;
@@ -115,7 +104,7 @@ namespace MultiplayerVC.Voice
             {
                 if (!_warnedNoEncoder)
                 {
-                    Debug.LogError("[VC] Capture: Encoder not initialized; cannot encode audio");
+                    Logger.Log("[VC] Capture: Encoder not initialized; cannot encode audio");
                     _warnedNoEncoder = true;
                 }
                 IsSending = false; return;
@@ -151,7 +140,7 @@ namespace MultiplayerVC.Voice
                     float db = 20f * Mathf.Log10(_rms + 1e-7f);
                     if (db > vadThresholdDb - 10f) // Only log when close to threshold to avoid spam
                     {
-                        Debug.Log($"[VC] Capture: OpenMic RMS={_rms:F6}, dB={db:F1}, threshold={vadThresholdDb:F1}, sending={shouldSend}");
+                        Logger.Log($"[VC] Capture: OpenMic RMS={_rms:F6}, dB={db:F1}, threshold={vadThresholdDb:F1}, sending={shouldSend}");
                     }
                 }
 
@@ -175,7 +164,7 @@ namespace MultiplayerVC.Voice
                         if (openMic)
                         {
                             float db = 20f * Mathf.Log10(_rms + 1e-7f);
-                            Debug.Log($"[VC] Capture: OpenMic SENDING frame, RMS={_rms:F6}, dB={db:F1}, len={len}");
+                            Logger.Log($"[VC] Capture: OpenMic SENDING frame, RMS={_rms:F6}, dB={db:F1}, len={len}");
                         }
                     }
                 }
@@ -203,7 +192,7 @@ namespace MultiplayerVC.Voice
             // Log threshold checks at regular intervals for debugging
             if (Time.frameCount % 60 == 0)
             {
-                Debug.Log($"[VC] Capture: VAD check: RMS={_rms:F6}, current dB={currentDb:F1}, smoothed dB={_smoothedDb:F1}, threshold={vadThresholdDb:F1}, above={isAbove}");
+                Logger.Log($"[VC] Capture: VAD check: RMS={_rms:F6}, current dB={currentDb:F1}, smoothed dB={_smoothedDb:F1}, threshold={vadThresholdDb:F1}, above={isAbove}");
             }
 
             return isAbove;
@@ -216,7 +205,7 @@ namespace MultiplayerVC.Voice
 
     private void SelectAndStartDevice(string? desired)
         {
-            Debug.Log($"[VC] Capture: SelectAndStartDevice requested='{desired ?? "<null>"}'");
+            Logger.Log($"[VC] Capture: SelectAndStartDevice requested='{desired ?? "<null>"}'");
             // Determine desired device
             if (string.IsNullOrEmpty(desired))
             {
@@ -224,12 +213,12 @@ namespace MultiplayerVC.Voice
                 string[] devices = Microphone.devices;
                 if (devices.Length == 0)
                 {
-                    Debug.LogWarning("[VC] Capture: No microphone devices detected");
+                    Logger.Log("[VC] Capture: No microphone devices detected");
                     _micClip = null;
                     return;
                 }
                 desired = devices[0];
-                Debug.Log($"[VC] Capture: Using default device '{desired}'");
+                Logger.Log($"[VC] Capture: Using default device '{desired}'");
             }
 
             // If already using desired, do nothing
@@ -250,11 +239,11 @@ namespace MultiplayerVC.Voice
                 {
                     _micClip = Microphone.Start(_deviceName, true, 1, sampleRate);
                     _micReadPos = 0;
-                    Debug.Log($"[VC] Capture: Started microphone '{_deviceName}' at {sampleRate} Hz");
+                    Logger.Log($"[VC] Capture: Started microphone '{_deviceName}' at {sampleRate} Hz");
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[VC] Capture: Failed to start microphone '{_deviceName}': {ex.Message}");
+                    Logger.Log($"[VC] Capture: Failed to start microphone '{_deviceName}': {ex.Message}");
                     _micClip = null;
                 }
             }
@@ -268,3 +257,4 @@ namespace MultiplayerVC.Voice
         }
     }
 }
+

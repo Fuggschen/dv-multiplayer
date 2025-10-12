@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using MultiplayerVC.Voice;
-using UnityEngine;
 using MPAPI;
-using MPAPI.Interfaces.Packets;
 
 namespace MultiplayerVC.Networking
 {
@@ -22,8 +20,8 @@ namespace MultiplayerVC.Networking
             _bridge = bridge;
             _mute = mute;
             _bridge.OnPayload += OnPayload;
-            Debug.Log($"[VC] BridgeVoiceTransport: created (IsServer={_bridge.IsServer}, bridge type={_bridge.GetType().Name})");
-            Debug.Log($"[VC] BridgeVoiceTransport: OnPayload event subscribed to bridge");
+            Logger.Log($"[VC] BridgeVoiceTransport: created (IsServer={_bridge.IsServer}, bridge type={_bridge.GetType().Name})");
+            Logger.Log($"[VC] BridgeVoiceTransport: OnPayload event subscribed to bridge");
         }
 
         public void Dispose()
@@ -50,19 +48,19 @@ namespace MultiplayerVC.Networking
             var targetsList = new List<byte>();
             if (client?.Players == null) return;
             targetsList.AddRange(from p in client.Players where p.PlayerId != frame.SenderId select p.PlayerId);
-            Debug.Log($"[VC] Transport(Sender): broadcasting frame seq={frame.Sequence} to {targetsList.Count} targets (sender={frame.SenderId})");
+            Logger.Log($"[VC] Transport(Sender): broadcasting frame seq={frame.Sequence} to {targetsList.Count} targets (sender={frame.SenderId})");
             _bridge.SendToAll(bytes);
         }
 
 
         private void OnPayload(byte fromPlayerId, byte[] payload)
         {
-            Debug.Log($"[VC] Transport(Receiver): OnPayload called with fromPlayerId={fromPlayerId}, payload length={payload?.Length ?? 0}");
+            Logger.Log($"[VC] Transport(Receiver): OnPayload called with fromPlayerId={fromPlayerId}, payload length={payload?.Length ?? 0}");
             
             // Clients receive this from the sender
             if (_mute != null && _mute.IsMutedLocal(fromPlayerId))
             {
-                Debug.Log($"[VC] Transport(Receiver): drop muted remote {fromPlayerId}");
+                Logger.Log($"[VC] Transport(Receiver): drop muted remote {fromPlayerId}");
                 return;
             }
 
@@ -77,12 +75,12 @@ namespace MultiplayerVC.Networking
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[VC] Transport(Receiver): failed to deserialize server payload: {ex.Message}");
+                Logger.Log($"[VC] Transport(Receiver): failed to deserialize server payload: {ex.Message}");
                 return;
             }
 
             if (fromPlayerId != 0) frame.SenderId = fromPlayerId;
-            Debug.Log($"[VC] Transport(Receiver): received frame from {frame.SenderId}, seq={frame.Sequence}");
+            Logger.Log($"[VC] Transport(Receiver): received frame from {frame.SenderId}, seq={frame.Sequence}");
             OnVoiceFrame?.Invoke(frame);
         }
     }
