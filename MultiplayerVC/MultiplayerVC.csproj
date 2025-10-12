@@ -18,6 +18,7 @@
     <Reference Include="UnityEngine.AudioModule" />
     <Reference Include="UnityEngine.InputLegacyModule" />
     <Reference Include="UnityEngine.IMGUIModule" />
+    <PackageReference Include="UnityModManager" Version="0.31.1" />
     <Reference Include="MultiplayerAPI">
       <HintPath>..\build\MultiplayerAPI.dll</HintPath>
     </Reference>
